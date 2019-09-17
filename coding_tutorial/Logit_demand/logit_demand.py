@@ -61,9 +61,10 @@ def choice_probability(I,X,beta):
     #         devide the denominator and numerator by exp(max product score for this person)
     #         equivalent to 
     #         score for each product - max score 
-    for consumer, frame in df.groupby('consumer_id'):
-        max_index = np.max(frame['score'])
-        df.loc[df['consumer_id'] == consumer,'score'] = frame['score'] - max_index
+    maxscore = df.groupby('consumer_id').agg({'score':np.max}).rename(columns = {'score':'max_score'})
+    df = pd.merge(df,maxscore, left_on = 'consumer_id', right_on = 'consumer_id')
+    df['score'] = df['score'] - df['max_score']
+    df = df.drop(columns = 'max_score')
     
     # (2). calculate a probability of chosing each product for each consumer, based on the score
     for consumer, frame in df.groupby('consumer_id'):
