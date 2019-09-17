@@ -6,7 +6,9 @@ import scipy.stats as stats
 # NOTE
 # ------------------------------------------------------------------------
 # Purpose:
-# define functions
+# define class: LogitDemand, with method:
+#     1. choice_probability(I,X,beta)
+#     2. loglikelihood(Y,I,X,beta)
 #
 # Definition of several variables in this file:
 # n: number of consumers
@@ -67,10 +69,10 @@ def choice_probability(I,X,beta):
     df = df.drop(columns = 'max_score')
     
     # (2). calculate a probability of chosing each product for each consumer, based on the score
-    for consumer, frame in df.groupby('consumer_id'):
-        total_expscore_thisperson = np.sum(np.exp(frame['score']))
-        df.loc[df['consumer_id'] == consumer,'prob'] = frame.apply(lambda row: np.exp(row['score'])/total_expscore_thisperson, 
-                                                               axis = 1)
+    df['expscore'] = np.exp(df['score'])
+    total_expscore = df.groupby('consumer_id').agg({'expscore': np.sum }).rename(columns = {'expscore':'total_expscore'})
+    df = pd.merge(df, total_expscore, how = 'left', left_on = 'consumer_id', right_on = 'consumer_id')
+    df['prob'] = np.exp(df['score'])/df['total_expscore']
     
     # 3. check and return values ---------------------------------------------------------------
     # check whether prob for each person sum up to 1
