@@ -1,7 +1,4 @@
-import numpy as np
-import pandas as pd
-import scipy.stats as stats
-
+'''
 # ------------------------------------------------------------------------
 # NOTE
 # ------------------------------------------------------------------------
@@ -9,26 +6,75 @@ import scipy.stats as stats
 # define class: LogitDemand, with method:
 #     1. choice_probability(I,X,beta)
 #     2. loglikelihood(Y,I,X,beta)
+#     3. ...
 #
 # Definition of several variables in this file:
-# n: number of consumers
-# m: number of products
+# n: number of cases 
+# c: number of available products (choices)
 #    outside option normalized to 0 and not included among the choices
-# k: length of beta, number of variables
+# m: length of beta, number of variables/attributes
 # ------------------------------------------------------------------------
+# test
+'''
+
+import numpy as np
+import pandas as pd
+import scipy.stats as stats
+import matplotlib.pyplot as plt
+
+
+def loadConfig(config_filename):
+    # read configs that defines the subsample
+
+    # want info: female only? under 65 only?
+    info_want = ['female_only', 'under_65']
+    
+    # import file
+    cfgfile = pd.read_csv(config_filename, header=None, index_col = 0)
+    
+    # get info
+    if not all(elem in cfgfile.index  for elem in info_want):
+        raise Exception('not all information needed are in the config file.')
+
+    female_only = cfgfile.loc['female_only'].iloc[0]
+    under65 = cfgfile.loc['under_65'].iloc[0]
+    return (female_only, under65)
 
 class LogitDemand:
-    datatype = 'a dataframe storing ids, Y(choices), X(attributes)'
+    ''' Samples for logit demand analysis
+    main part: a dataframe storing ids, Y(choices), X(attributes)'''
 
     # get the main dataframe (and get the set of variables)
-    def __init__(self, df):
+    def __init__(self, df, case_id, choice_id, case_groupid = None, choice_groupid = None):
+        
+        # get full sample or subsample. according to the config file
+        config_filename = 'cfg/config.csv'
+        (female_only, under65) = loadConfig(config_filename)
+        if female_only == 1:
+            df = df[df['female'] == 1]
+        if under65 == 1:
+            df = df[df['age'] < 65]
+
+        # get the data
         self.main = df
+
+        # set parameters:
         self.columns = df.columns.tolist()
+        self.set_ids(case_id, choice_id, case_groupid, choice_groupid)
+
+        # print out information:
+        print('SAMPLE:')
+        print('    female only: {}; under 65 only: {}'.format(female_only == 1,under65 == 1))
+        print('number of observations: {}'.format(len(df)))
+        print('       number of cases: {}'.format(len(df[case_id].unique())))
+        print('            choice set: {}'.format(df[choice_id].unique().tolist()))
 
     # I. set variables ----------------------------------------------------
     # 1. ids
+
     def set_ids(self, case_id, choice_id, case_groupid = None, choice_groupid = None):
-        
+        '''Set case_id and choice_id for the dataframe '''
+
         # (1) covert ids into str
         if isinstance(case_id, list):
             if len(case_id) == 1:
@@ -64,13 +110,14 @@ class LogitDemand:
         
         # sort according to case-choice
         self.main = self.main.sort_values([case_id, choice_id]).reset_index(drop = True)
+        self.main.index.name = 'case_choice_id'
 
         # b. can be not uniquely identified, but need to raise it
 
 
     # 2. variable related to product and to consumer
     def set_attributes(self, prod_varnames, consumer_varnames, consumer_prod_varnames):
-        # prod_varnames should include price
+        '''set attributes '''
 
         # To list, even if contains only 1 variable:
         if isinstance(prod_varnames, str):
@@ -87,6 +134,8 @@ class LogitDemand:
 
     # 3. Y
     def set_Y(self,Y_name):
+        '''set Y (observed choice) variable. Make sure it's binary'''
+
         # (1) check input type prefered input type: str
         if isinstance(Y_name,list):
             if len(Y_name) > 1:
@@ -132,15 +181,20 @@ class LogitDemand:
 
     # II. set analysis data: Y, regressor, I = case id --------------------
     def set_regressor(self, list_of_regressor):
+        ''' set regressor names '''
         self.regressor = list_of_regressor
 
     # III. estimate MLE ---------------------------------------------------
+
     def choice_probability(self,beta):
-        # Purpose: compute the probability of each consumer making each choices
-        # Inputs:
-        # I: vector of consumer index, n*c-by-1
-        # X: matrix of consumer choice attributes, n*c-by-m, index = consumer_id
-        # beta: coefficients, m-by-1
+        '''Purpose: compute the probability of each consumer making each choices
+        Inputs:
+        beta: coefficients, m-by-1
+        self gives:
+            I : vector of consumer index, n*c-by-1
+            X: matrix of consumer choice attributes, n*c-by-m, index = consumer_id
+        '''
+
         I = self.main[self.case_id]
         X = self.main[self.regressor]
 
@@ -216,12 +270,15 @@ class LogitDemand:
 
 
     def loglikelihood(self,beta):
-        # Purpose: compute the NEGATIVE likelihood of a binary vector of choices Y, conditional on X
-        # Inputs:
-        # Y: binary-vector of choices, n*c-by-1
-        # I: vector of consumer index, n*c-by-1
-        # X: matrix of consumer choice attributes, n*c-by-m
-        # beta: coefficients, m-by-1
+        '''Purpose: compute the NEGATIVE likelihood of a binary vector of choices Y, conditional on X
+        Inputs:
+        beta: coefficients, m-by-1
+        self gives:
+            Y: binary-vector of choices, n*c-by-1
+            I: vector of consumer index, n*c-by-1
+            X: matrix of consumer choice attributes, n*c-by-m
+        '''
+
         I = self.main[self.case_id]
         X = self.main[self.regressor]
         Y = self.main[self.Y_name]
@@ -280,13 +337,25 @@ class LogitDemand:
         # return a number, the NEGATIVE likelihood y|x
 
     # IV. visualize  ------------------------------------------------------
-    def plot_fit(self,beta):
+    def plot_fit(self,beta,figpath):
 
         Y = self.main[self.Y_name]
         # 1 estimate likelihood for each obs = consumer-product
         likelihood_c_j = self.choice_probability(beta)
         likelihood_c_j.reset_index(drop = True, inplace = True)
         likelihood_c = likelihood_c_j.loc[Y==1]
+
+        # 2 plot the histogram
+        histname = 'hist_likelihood'
+        plt.figure()
+        plt.hist(likelihood_c, density = True )
+        plt.xlabel('Logit Choice probability of effective choices')
+        plt.xlim(0,1)
+
+        filename = figpath + '/' + histname + '.png'
+        plt.savefig(filename)
+
+
 
 
 
