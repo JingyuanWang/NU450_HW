@@ -36,11 +36,32 @@ class firm_production:
         self.variables = df.columns.tolist()
         self.set_ids(firm_id, year_id, industry_id)
 
-    # I. set variables ----------------------------------------------------
-    # 1. ids
+    # I. basic settings, if input a dataframe ----------------------------
+    def gen_randomsample(num_of_firm, num_of_industry = 1, year_span = (1990,1999), random_seed=13344 ):
+        '''generate a random sample of unbalanced panel, mimic firms exist and entry
+        input varaiables: 
+            -num_of_firm: scaler
+            -num_of_industry: scaler, default = 1
+            -year_span: tuple, (start,end), default = (1990,1999)
+            -random_seed: productivities are drawn from a Normal distribution.'''
 
+        # 0. Initialize parameters -----------------------------------------------
+        # number of consumers
+        n = num_of_consumer
+        # range of choices, total number of products
+        c_min,c_max,tc = choice
+        # number of attributes
+        m,m1,m2 = num_of_attributes
+        # random seed
+        np.random.seed(seed=random_seed)
+
+
+
+    # II. basic settings, if input a dataframe ---------------------------
+    # 1. ids
     def set_ids(self, firm_id, year_id, industry_id = None):
-        '''Set case_id and choice_id for the dataframe '''
+        '''Set firm_id and year_id for the dataframe 
+        Print basic stats about the ids'''
 
         # (1) covert ids into str
         if isinstance(firm_id, list):
@@ -60,7 +81,7 @@ class firm_production:
         if industry_id != None:
             self.industry_id = industry_id
         else:
-            self.industry_id = '0'
+            self.industry_id = 'industry_id'
 
 
         # (3) check the uniqueness:
@@ -73,10 +94,19 @@ class firm_production:
             raise Exception('''firm_id ({}) * year_id ({}) not unique in the dataframe.
                 Return: self.problematic_ids, a series of id tuples which have more than 1 obs in the dataframe'''.format(firm_id,year_id))
         
+        # (4) output
         # sort according to case-choice
         self.full_sample = self.full_sample.sort_values([firm_id, year_id]).reset_index(drop = True)
         self.full_sample.index.name = 'firm_year_id'
+        self.full_sample= self.full_sample.astype({self.industry_id: 'int32',
+                                                   self.year_id:'int32'})
+        if industry_id == None:
+            self.full_sample['industry_id'] = 0
 
+        # (5) stats
+        table = self.stats_panel_basic(df = self.full_sample)
+        print("-- Table: Number of firms in each industry-year (full sample) ----")
+        print(table)
 
     # 2. get a balanced panel
     def balance_panel(self):
@@ -109,6 +139,38 @@ class firm_production:
                                     .drop(columns='length')
                                     .reset_index()
                                     .sort_values(self.firm_id))
+         # (5) stats
+        table = self.stats_panel_basic(df = self.balanced_sample)
+        print("-- Table: Number of firms in each industry-year (balanced sample) ----")
+        print(table)
+
+    # III. statistics ----------------------------------------------------
+    def stats_panel_basic(self, df, industry=None):
+        '''Report basic facts about the panel data:
+            -number of years
+            -number of firms
+            -on average/min/max, how many years a firm would survive.
+        if industry_id is given, then report the facts of that industry
+        else, report the full sample.'''
+
+        pd.options.display.float_format = '{:,.0f}'.format
+        if industry == None:
+            table = (df.pivot_table(values=[self.firm_id], 
+                        index=[self.industry_id, self.year_id], 
+                        aggfunc={self.firm_id:np.count_nonzero} )
+                    .rename(columns = {self.firm_id: 'Number of firms'} )
+                    .reset_index().pivot(index=self.year_id, columns=self.industry_id, values='Number of firms')
+                    )
+            table.loc["Total"] = df.groupby(['industry_id'])['firm_id'].nunique()
+        else:
+            table = (df[df[self.industry_id] == industry]
+                        .pivot_table(values=[self.firm_id], 
+                            index=[self.industry_id, self.year_id], 
+                            aggfunc={self.firm_id:np.count_nonzero}) 
+                        .rename(columns = {self.firm_id: 'Number of firms'} )
+                        )
+            table.loc[(industry,"Total"),'Number of firms'] = df.loc[df[self.industry_id]==industry,'firm_id'].nunique()
+        return table
 
 
 
