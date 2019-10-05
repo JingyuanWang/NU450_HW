@@ -24,8 +24,17 @@ if c(username) == "jingyuanwang" | c(username) == "Jingyuan" {
 global data = "$proj_folder/data"
 global results = "$proj_folder/results"
 
+cd "$proj_folder/"
+
+
+* Install Packages *************************************************************
+net install st0145_2, force
+net install st0060
+net install st0460
+net install sg71
+
 ********************************************************************************
-* 0. import and clean the data file
+* 1. import and clean the data file + save as PS1_data_cleaned.dta
 ********************************************************************************
 
 * 1. import file
@@ -96,8 +105,23 @@ drop sequence
 }
 
 
+* 3. industry id
+gen industry_id = s01*1+s02*2+s03*3+s04*4+s05*5+s06*6+s07*7+s08*8+s09*9+s10*10+s11*11+s12*12+s13*13+s14*14+s15*15+s16*16+s17*17+s18*18
+
+* 4. output var
+gen ly_va = log(exp(ly)-exp(lm-lp+lwm))
 
 
-********************************************************************************
-* I. statistics 
-********************************************************************************
+* 5. save
+order industry_id firm_id year obs ly ly_va 
+order s* t4 t6 d*, a(exit)
+sort industry_id firm_id year
+save "$data/PS1_data_cleaned.dta", replace
+
+
+
+
+
+
+
+
