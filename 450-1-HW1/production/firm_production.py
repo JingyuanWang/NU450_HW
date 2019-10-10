@@ -19,6 +19,7 @@ import scipy.stats as stats
 import scipy.optimize as opt
 import econtools 
 import econtools.metrics as mt
+import matplotlib.pyplot as plt
 import statsmodels.discrete.discrete_model as sm
 import importlib
 
@@ -38,7 +39,7 @@ class firm_production:
     main part: a dataframe storing firm ids, year, productions, factor inputs.'''
 
     # get the main dataframe (and get the set of variables)
-    def __init__(self, df, firm_id, year_id, industry_id = None):
+    def __init__(self, df, firm_id, year_id, resultpath, industry_id = None ):
         
         # get the data
         self.full_sample = df
@@ -47,8 +48,15 @@ class firm_production:
         self.variables = df.columns.tolist()
         self.set_ids(firm_id, year_id, industry_id)
 
+        # set path
+        self.set_path(resultpath)
+
 
     # I. basic settings --------------------------------------------------
+    # 0. save temporary files and outputs
+    def set_path(self, resultpath):
+        self.resultpath = resultpath
+
     # 1. ids
     def set_ids(self, firm_id, year_id, industry_id = None):
         '''Set firm_id and year_id for the dataframe 
@@ -134,8 +142,7 @@ class firm_production:
         table = self.stats_panel_basic(df = self.balanced_sample)
         print("-- Table: Number of firms in each industry-year (balanced sample) ----")
         print(table)
-
-    # III. statistics ----------------------------------------------------
+    # II. statistics ----------------------------------------------------
     def stats_panel_basic(self, df, industry=None):
         '''Report basic facts about the panel data:
             -number of years
@@ -164,7 +171,7 @@ class firm_production:
         return table
 
 
-    # IV. regressions ----------------------------------------------------
+    # III. regressions ----------------------------------------------------
 
     def GNR_stage1_obj(self,beta, df, share, poly):
         x = df[poly].values@beta
@@ -173,7 +180,7 @@ class firm_production:
         return sum((LHS - RHS)**2)
 
     def GNR_stage1_constraint(self,df_input,poly,beta):
-        tol = 1e-5
+        tol = 1e-2
         min_value = np.min(df_input[poly].values@beta) - tol
         return min_value
 
@@ -192,15 +199,16 @@ class firm_production:
     
 
     def GNR_stage2_partial_integral(self, gammas, df, poly):
-        partial_int = gammas[0]*df[poly[0]]
-        partial_int = partial_int + gammas[1] * df[poly[1]]
-        partial_int = partial_int + gammas[2] * df[poly[2]]
+        partial_int = gammas[0]*df[poly[0]] * df[poly[3]]
+        partial_int = partial_int + gammas[1] * df[poly[1]] * df[poly[3]]
+        partial_int = partial_int + gammas[2] * df[poly[2]] * df[poly[3]]
         partial_int = partial_int + (gammas[3]/2) * df[poly[3]]**2
         return partial_int
 
     def GNR_stage2_g_markov(self, delta, alphas, df , lag_poly):
         L_omega = df['L_phi'] + df[lag_poly].values@alphas
-        s = delta[0] * L_omega + delta[1] * L_omega**2
+        s = delta[0] * L_omega
+        # s = delta[0] * L_omega + delta[1] * L_omega**2
         return s
 
     def GNR_stage2_obj(self, pars, df, poly, lag_poly):
@@ -213,7 +221,7 @@ class firm_production:
         return sum((LHS-RHS)**2)
 
 
-    def GNR(self, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry, stage2_polymax = 2):
+    def GNR(self, df_input, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry = None, stage2_polymax = 2):
         '''GNR production estimation'''
 
         stage1_polymax = 1
@@ -227,12 +235,15 @@ class firm_production:
         
         # finish checking input arguments
         print('--GNR:')
-        print('--for industry {}'.format(industry))
+        print('--for industry {} ----------------------'.format(industry))
 
 
         # STEP 0 : get data, generate non-par polynomials
         # 1.get the sample data
-        df = self.full_sample.loc[self.full_sample[self.industry_id]==industry, ids + variables]
+        if industry != None:
+            df = df_input.loc[self.full_sample[self.industry_id]==industry, ids + variables]
+        else:
+            df = df_input[ids + variables]
 
         # 2. generate stage 1 dataframe and polynomials
         [df_stage1, poly] = mf.gen_poly(df,
@@ -257,12 +268,20 @@ class firm_production:
                                 constraints={'type': 'ineq', 'fun': constraint} )
         print('--GNR: stage 1 optimization completed')
 
-        # (2) get residul
+
+        # (2) get residul and fitted value
         gammas = results.x
-        eps = df_stage1['ls'] - df_stage1[poly].values@gammas
+        fitted = np.log(df_stage1[poly].values@gammas)
+        eps = df_stage1['ls'] - fitted
         E = np.mean(np.exp(eps)) 
 
-        # adjust the gammas
+        # (3) plot the fitting
+        figpath = self.resultpath + '/' + 'GNR' 
+        figname = 'GNR_stage1_fitting'
+        self.plot_nonpar_fit(df_stage1['ls'], fitted, figpath,figname)
+        print(poly) 
+
+        # (4) adjust the gammas
         gammas = gammas / E
 
         # 3. get the material elasticity
@@ -270,8 +289,9 @@ class firm_production:
 
         # 4. partial out the part correlated with flexible input
         # prepare for stage 2
-        df_stage1['phi'] = df_stage1[ln_gross_output] - self.GNR_stage2_partial_integral(gammas, df_stage1, poly) - eps
-        print('--GNR: stage 1 completed --')
+        df_stage1['partialint_m'] = self.GNR_stage2_partial_integral(gammas, df_stage1, poly)
+        df_stage1['phi'] = df_stage1[ln_gross_output] - df_stage1['partialint_m'] - eps
+        print('--GNR: stage 1 completed --------------------- ')
 
         # --------------------------- 
         # STAGE 2
@@ -291,7 +311,7 @@ class firm_production:
         lag_vars = poly + ['phi']
         lag_vars_newname = ['L_' + x  for x in lag_vars] 
         lag_poly =  ['L_' + x  for x in poly] 
-        df_stage2[lag_vars_newname] = df_stage2.groupby('firm_id')[lag_vars].shift(periods = 1)
+        df_stage2[lag_vars_newname] = df_stage2.groupby(self.firm_id)[lag_vars].shift(periods = 1)
         # drop a row if any element == nan
         df_stage2.dropna(inplace = True)
 
@@ -305,9 +325,19 @@ class firm_production:
                                 pars,
                                 args = (df_stage2, poly, lag_poly) )
         alphas = results.x[:-2]
+        delta = results.x[-2:]
         # note, alpha is in the same order as poly
         print('--GNR: stage 2 optimization completed')
-        
+        # (2) plot the fitting
+        figpath = self.resultpath + '/' + 'GNR' 
+        figname = 'GNR_stage2_fitting'
+        # note here it's a negative sign! By theory!
+        df_stage2['omega_expected'] = self.GNR_stage2_g_markov(delta, alphas, df_stage2, lag_poly)
+        df_stage2['partial_k_l'] = - df_stage2[poly].values@alphas
+        fitted =  df_stage2['partial_k_l'] + df_stage2['omega_expected']
+        self.plot_nonpar_fit(df_stage2['phi'], fitted, figpath,figname)
+        print(poly)
+
         # 4. generate elasticities for k and l
         if stage2_polymax == 3:
             df_stage2['alpha_k'] = - (alphas[poly.index('poly_ll_lc_0_1')] + 
@@ -335,23 +365,67 @@ class firm_production:
             df_stage2['alpha_k'] = -alphas[poly.index('poly_ll_lc_0_1')]
             df_stage2['alpha_l'] = -alphas[poly.index('poly_ll_lc_1_0')]
 
-        print('--GNR: stage 2 completed --')
-
-
+        print('--GNR: stage 2 completed ---------------------')
+         
         # --------------------------- 
         # STAGE 3
+        # estimate a fitted value for ln( gross output)
+        # ---------------------------
+        # 4. plot the fitted gross output
+        print('')
+        print('--GNR: fitted ln(gross output) (single out productivities)')
+        figpath = self.resultpath + '/' + 'GNR' 
+        figname = 'GNR_stage2_fitting'
+        # note here it's a negative sign! By theory!
+        fitted_ly = df_stage2['partialint_m'] + df_stage2['partial_k_l']
+        self.plot_nonpar_fit(df_stage2[ln_gross_output], fitted_ly, figpath,figname)
+
+        # --------------------------- 
+        # STAGE 4
         # export elasticities and the final dataframe
         # ---------------------------
-        df_stage2 = df_stage2.drop(columns=poly)
+        #df_stage2 = df_stage2.drop(columns=poly)
 
         alpha_m = df_stage2['alpha_m'].mean()
         alpha_k = df_stage2['alpha_k'].mean()
         alpha_l = df_stage2['alpha_l'].mean()
 
-        alphas = [alpha_k, alpha_l, alpha_m]
+        alphas_output = {'alpha_k':alpha_k, 
+                         'alpha_l':alpha_l, 
+                         'alpha_m':alpha_m}
 
+        # output stage1 and stage2 results for further checking
+        parameters = [gammas, alphas, poly]
+
+        print('# --- ~ o(*￣▽￣*)o ~')
         print('# --- Complete GNR !!!  ~ o(*￣▽￣*)o ~')
-        return [alphas,df_stage2]
+        return [alphas_output,df_stage1,df_stage2, parameters]
+
+
+    # IV. visualize  ------------------------------------------------------
+    def plot_nonpar_fit(self, yvar, fitted,figpath,figname):
+
+        # Figure parameters
+        area = np.pi*3
+        filename = figpath + '/' + figname + '.png'
+
+        # Plot
+        plt.figure()
+        plt.scatter(fitted, yvar, s=area, alpha=0.5)
+        plt.title('Scatter plot: non-parametric fitting')
+        plt.xlabel('fitted value')
+        plt.ylabel('y')
+        plt.savefig(filename)
+        plt.show()
+
+        # 2 plot the histogram
+        #histname = 'scatter_non'
+        #plt.figure()
+        #plt.hist(likelihood_c, density = True )
+        #plt.xlabel('Logit Choice probability of effective choices')
+        #plt.xlim(0,1)
+
+        
 
 
 
