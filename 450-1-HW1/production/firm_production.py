@@ -7,20 +7,31 @@
 #     1. balance()
 #     2. ()
 #     3. ...
-#
-# Definition of several variables in this file:
-# n: number of cases 
-# c: number of available products (choices)
-#    outside option normalized to 0 and not included among the choices
-# m: length of beta, number of variables/attributes
+# 
+# To do:
+# GNR jacobian
 # ------------------------------------------------------------------------
-# test
 '''
 
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
-import matplotlib.pyplot as plt
+import scipy.optimize as opt
+import econtools 
+import econtools.metrics as mt
+import statsmodels.discrete.discrete_model as sm
+import importlib
+
+# mine
+import os,sys,inspect
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0,parentdir) 
+
+import myfunctions as mf
+importlib.reload(mf)
+
+
 
 class firm_production:
     ''' Samples for productivity analysis
@@ -36,28 +47,8 @@ class firm_production:
         self.variables = df.columns.tolist()
         self.set_ids(firm_id, year_id, industry_id)
 
-    # I. basic settings, if input a dataframe ----------------------------
-    def gen_randomsample(num_of_firm, num_of_industry = 1, year_span = (1990,1999), random_seed=13344 ):
-        '''generate a random sample of unbalanced panel, mimic firms exist and entry
-        input varaiables: 
-            -num_of_firm: scaler
-            -num_of_industry: scaler, default = 1
-            -year_span: tuple, (start,end), default = (1990,1999)
-            -random_seed: productivities are drawn from a Normal distribution.'''
 
-        # 0. Initialize parameters -----------------------------------------------
-        # number of consumers
-        n = num_of_consumer
-        # range of choices, total number of products
-        c_min,c_max,tc = choice
-        # number of attributes
-        m,m1,m2 = num_of_attributes
-        # random seed
-        np.random.seed(seed=random_seed)
-
-
-
-    # II. basic settings, if input a dataframe ---------------------------
+    # I. basic settings --------------------------------------------------
     # 1. ids
     def set_ids(self, firm_id, year_id, industry_id = None):
         '''Set firm_id and year_id for the dataframe 
@@ -171,6 +162,199 @@ class firm_production:
                         )
             table.loc[(industry,"Total"),'Number of firms'] = df.loc[df[self.industry_id]==industry,'firm_id'].nunique()
         return table
+
+
+    # IV. regressions ----------------------------------------------------
+
+    def GNR_stage1_obj(self,beta, df, share, poly):
+        x = df[poly].values@beta
+        RHS = np.log(x)
+        LHS = df[share].values
+        return sum((LHS - RHS)**2)
+
+    def GNR_stage1_constraint(self,df_input,poly,beta):
+        tol = 1e-5
+        min_value = np.min(df_input[poly].values@beta) - tol
+        return min_value
+
+    def GNR_stage1_jac(self, beta, df, share, xvar):
+        s =  df[share].values
+        common = (s - np.log(df[xvar].values@beta)) * 2 / (df[xvar].values@beta)
+        der =  - df[xvar].values * common.flatten()[:,None]
+        value = np.sum(der, axis = 0)
+        #print(beta)
+        return value
+# example
+#x1=np.ones([4,3])
+#x2 = np.arange(4)
+#x1*x2[:,None]
+# x2[:,np.newaxis]
+    
+
+    def GNR_stage2_partial_integral(self, gammas, df, poly):
+        partial_int = gammas[0]*df[poly[0]]
+        partial_int = partial_int + gammas[1] * df[poly[1]]
+        partial_int = partial_int + gammas[2] * df[poly[2]]
+        partial_int = partial_int + (gammas[3]/2) * df[poly[3]]**2
+        return partial_int
+
+    def GNR_stage2_g_markov(self, delta, alphas, df , lag_poly):
+        L_omega = df['L_phi'] + df[lag_poly].values@alphas
+        s = delta[0] * L_omega + delta[1] * L_omega**2
+        return s
+
+    def GNR_stage2_obj(self, pars, df, poly, lag_poly):
+        ''' the LHS is phi'''
+        alphas = pars[:-2]
+        delta = pars[-2:]
+        LHS = df['phi']
+        RHS = - df[poly].values@alphas + self.GNR_stage2_g_markov(delta, alphas, df, lag_poly)
+        
+        return sum((LHS-RHS)**2)
+
+
+    def GNR(self, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry, stage2_polymax = 2):
+        '''GNR production estimation'''
+
+        stage1_polymax = 1
+        # will put this back to an input argument. But now the integral function is not general enough
+        # check GNR_stage2_partial_integral
+        # also the optimization does not work with poly >= 2 !!!
+
+        ids = [self.industry_id, self.firm_id, self.year_id]
+        prices = [price_m, price_y]
+        variables = [ln_gross_output] + statevar + [flexiblevar] + prices
+        
+        # finish checking input arguments
+        print('--GNR:')
+        print('--for industry {}'.format(industry))
+
+
+        # STEP 0 : get data, generate non-par polynomials
+        # 1.get the sample data
+        df = self.full_sample.loc[self.full_sample[self.industry_id]==industry, ids + variables]
+
+        # 2. generate stage 1 dataframe and polynomials
+        [df_stage1, poly] = mf.gen_poly(df,
+                                        statevar+[flexiblevar],
+                                        stage1_polymax)
+        
+        # --------------------------- 
+        # STAGE 1
+        # identify coeff of flexible var
+        # ---------------------------
+
+        # 1. generate share of flexiblevar to the total ouutput in $
+        df_stage1['ls'] = df_stage1[flexiblevar] + df_stage1[price_m] - df_stage1[ln_gross_output] - df_stage1[price_y]
+
+        # 2. estimate: use state variables to predit the share
+        # (1) estimate
+        beta_initial = np.ones(len(poly))*2
+        constraint = lambda x: self.GNR_stage1_constraint(df_stage1,poly,x)
+        results = opt.minimize(self.GNR_stage1_obj,
+                                beta_initial,
+                                args = (df_stage1,'ls',poly), 
+                                constraints={'type': 'ineq', 'fun': constraint} )
+        print('--GNR: stage 1 optimization completed')
+
+        # (2) get residul
+        gammas = results.x
+        eps = df_stage1['ls'] - df_stage1[poly].values@gammas
+        E = np.mean(np.exp(eps)) 
+
+        # adjust the gammas
+        gammas = gammas / E
+
+        # 3. get the material elasticity
+        df_stage1['alpha_m']= df_stage1[poly]@gammas
+
+        # 4. partial out the part correlated with flexible input
+        # prepare for stage 2
+        df_stage1['phi'] = df_stage1[ln_gross_output] - self.GNR_stage2_partial_integral(gammas, df_stage1, poly) - eps
+        print('--GNR: stage 1 completed --')
+
+        # --------------------------- 
+        # STAGE 2
+        # identify coeff of state variables
+        # for omega_it:
+        #    1. use Markov: expectation = function of omega_i,t-1  
+        #    2. use control function to get omega_i,t-1  in terms of statevar_i,t-1
+        # ---------------------------
+        
+        # 0. get a new dataframe for stage 2 (because when taking lags, we lose obs.)
+        df_stage2 = df_stage1.drop(columns=poly) # the polynomials were just for stage 1 nonpar estimation
+
+        # 1. generate polynomials
+        [df_stage2, poly] = mf.gen_poly(df_stage2,['ll','lc'], stage2_polymax)
+
+        # 2. generate lags
+        lag_vars = poly + ['phi']
+        lag_vars_newname = ['L_' + x  for x in lag_vars] 
+        lag_poly =  ['L_' + x  for x in poly] 
+        df_stage2[lag_vars_newname] = df_stage2.groupby('firm_id')[lag_vars].shift(periods = 1)
+        # drop a row if any element == nan
+        df_stage2.dropna(inplace = True)
+
+        # 3. optimize
+        # (1) innitial value: 1
+        alphas_initial = np.ones(len(poly))
+        delta_initial = np.ones(2)
+        pars = np.append(alphas_initial,delta_initial)
+        # (2) optimize
+        results = opt.minimize(self.GNR_stage2_obj,
+                                pars,
+                                args = (df_stage2, poly, lag_poly) )
+        alphas = results.x[:-2]
+        # note, alpha is in the same order as poly
+        print('--GNR: stage 2 optimization completed')
+        
+        # 4. generate elasticities for k and l
+        if stage2_polymax == 3:
+            df_stage2['alpha_k'] = - (alphas[poly.index('poly_ll_lc_0_1')] + 
+                                    2 * alphas[poly.index('poly_ll_lc_0_2')] * df_stage2['lc'] +
+                                    3 * alphas[poly.index('poly_ll_lc_0_3')] * df_stage2['lc']**2 +
+                                    alphas[poly.index('poly_ll_lc_1_1')] * df_stage2['ll'] +
+                                    2 * alphas[poly.index('poly_ll_lc_1_2')] * df_stage2['ll'] * df_stage2['lc'] +
+                                    alphas[poly.index('poly_ll_lc_2_1')] * df_stage2['ll']**2 )
+
+            df_stage2['alpha_l'] = - (alphas[poly.index('poly_ll_lc_1_0')] + 
+                                    2 * alphas[poly.index('poly_ll_lc_2_0')] * df_stage2['ll'] + 
+                                    3 * alphas[poly.index('poly_ll_lc_3_0')] * df_stage2['ll']**2 +
+                                    alphas[poly.index('poly_ll_lc_1_1')] * df_stage2['lc'] +
+                                    2 * alphas[poly.index('poly_ll_lc_2_1')] * df_stage2['ll'] * df_stage2['lc'] +
+                                    alphas[poly.index('poly_ll_lc_1_2')] * df_stage2['lc']**2 )
+
+        if stage2_polymax == 2:
+            df_stage2['alpha_k'] = - (alphas[poly.index('poly_ll_lc_0_1')] + 
+                                    2 * alphas[poly.index('poly_ll_lc_0_2')] * df_stage2['lc'] +
+                                    alphas[poly.index('poly_ll_lc_1_1')] * df_stage2['ll'] )
+            df_stage2['alpha_l'] = - (alphas[poly.index('poly_ll_lc_1_0')] + 
+                                    2 * alphas[poly.index('poly_ll_lc_2_0')] * df_stage2['ll'] + 
+                                    alphas[poly.index('poly_ll_lc_1_1')] * df_stage2['lc'] )
+        if stage2_polymax == 1:
+            df_stage2['alpha_k'] = -alphas[poly.index('poly_ll_lc_0_1')]
+            df_stage2['alpha_l'] = -alphas[poly.index('poly_ll_lc_1_0')]
+
+        print('--GNR: stage 2 completed --')
+
+
+        # --------------------------- 
+        # STAGE 3
+        # export elasticities and the final dataframe
+        # ---------------------------
+        df_stage2 = df_stage2.drop(columns=poly)
+
+        alpha_m = df_stage2['alpha_m'].mean()
+        alpha_k = df_stage2['alpha_k'].mean()
+        alpha_l = df_stage2['alpha_l'].mean()
+
+        alphas = [alpha_k, alpha_l, alpha_m]
+
+        print('# --- Complete GNR !!!  ~ o(*￣▽￣*)o ~')
+        return [alphas,df_stage2]
+
+
+
 
 
 
