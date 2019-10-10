@@ -182,7 +182,7 @@ class firm_production:
     def GNR_stage1_constraint(self,df_input,poly,beta):
         tol = 1e-2
         min_value = np.min(df_input[poly].values@beta) - tol
-        return min_value
+        return df_input[poly].values@beta - tol
 
     def GNR_stage1_jac(self, beta, df, share, xvar):
         s =  df[share].values
@@ -221,7 +221,7 @@ class firm_production:
         return sum((LHS-RHS)**2)
 
 
-    def GNR(self, df_input, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry = None, stage2_polymax = 2):
+    def GNR(self, df_input, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry = None, stage2_polymax = 2, print_output = True):
         '''GNR production estimation'''
 
         stage1_polymax = 1
@@ -234,8 +234,9 @@ class firm_production:
         variables = [ln_gross_output] + statevar + [flexiblevar] + prices
         
         # finish checking input arguments
-        print('--GNR:')
-        print('--for industry {} ----------------------'.format(industry))
+        if print_output:
+            print('--GNR:')
+            print('--for industry {} ----------------------'.format(industry))
 
 
         # STEP 0 : get data, generate non-par polynomials
@@ -248,7 +249,7 @@ class firm_production:
         # 2. generate stage 1 dataframe and polynomials
         [df_stage1, poly] = mf.gen_poly(df,
                                         statevar+[flexiblevar],
-                                        stage1_polymax)
+                                        stage1_polymax, print_output = print_output)
         
         # --------------------------- 
         # STAGE 1
@@ -266,7 +267,8 @@ class firm_production:
                                 beta_initial,
                                 args = (df_stage1,'ls',poly), 
                                 constraints={'type': 'ineq', 'fun': constraint} )
-        print('--GNR: stage 1 optimization completed')
+        if print_output:
+            print('--GNR: stage 1 optimization completed')
 
 
         # (2) get residul and fitted value
@@ -276,10 +278,11 @@ class firm_production:
         E = np.mean(np.exp(eps)) 
 
         # (3) plot the fitting
-        figpath = self.resultpath + '/' + 'GNR' 
-        figname = 'GNR_stage1_fitting'
-        self.plot_nonpar_fit(df_stage1['ls'], fitted, figpath,figname)
-        print(poly) 
+        if print_output:
+            figpath = self.resultpath + '/' + 'GNR' 
+            figname = 'GNR_stage1_fitting'
+            self.plot_nonpar_fit(df_stage1['ls'], fitted, figpath,figname)
+            print(poly) 
 
         # (4) adjust the gammas
         gammas = gammas / E
@@ -291,7 +294,8 @@ class firm_production:
         # prepare for stage 2
         df_stage1['partialint_m'] = self.GNR_stage2_partial_integral(gammas, df_stage1, poly)
         df_stage1['phi'] = df_stage1[ln_gross_output] - df_stage1['partialint_m'] - eps
-        print('--GNR: stage 1 completed --------------------- ')
+        if print_output:
+            print('--GNR: stage 1 completed --------------------- ')
 
         # --------------------------- 
         # STAGE 2
@@ -305,7 +309,7 @@ class firm_production:
         df_stage2 = df_stage1.drop(columns=poly) # the polynomials were just for stage 1 nonpar estimation
 
         # 1. generate polynomials
-        [df_stage2, poly] = mf.gen_poly(df_stage2,['ll','lc'], stage2_polymax)
+        [df_stage2, poly] = mf.gen_poly(df_stage2,['ll','lc'], stage2_polymax, print_output = print_output)
 
         # 2. generate lags
         lag_vars = poly + ['phi']
@@ -327,16 +331,20 @@ class firm_production:
         alphas = results.x[:-2]
         delta = results.x[-2:]
         # note, alpha is in the same order as poly
-        print('--GNR: stage 2 optimization completed')
+        if print_output:
+            print('--GNR: stage 2 optimization completed')
+
+
         # (2) plot the fitting
-        figpath = self.resultpath + '/' + 'GNR' 
-        figname = 'GNR_stage2_fitting'
-        # note here it's a negative sign! By theory!
-        df_stage2['omega_expected'] = self.GNR_stage2_g_markov(delta, alphas, df_stage2, lag_poly)
-        df_stage2['partial_k_l'] = - df_stage2[poly].values@alphas
-        fitted =  df_stage2['partial_k_l'] + df_stage2['omega_expected']
-        self.plot_nonpar_fit(df_stage2['phi'], fitted, figpath,figname)
-        print(poly)
+        if print_output:
+            figpath = self.resultpath + '/' + 'GNR' 
+            figname = 'GNR_stage2_fitting'
+            # note here it's a negative sign! By theory!
+            df_stage2['omega_expected'] = self.GNR_stage2_g_markov(delta, alphas, df_stage2, lag_poly)
+            df_stage2['partial_k_l'] = - df_stage2[poly].values@alphas
+            fitted =  df_stage2['partial_k_l'] + df_stage2['omega_expected']
+            self.plot_nonpar_fit(df_stage2['phi'], fitted, figpath,figname)
+            print(poly)
 
         # 4. generate elasticities for k and l
         if stage2_polymax == 3:
@@ -365,20 +373,22 @@ class firm_production:
             df_stage2['alpha_k'] = -alphas[poly.index('poly_ll_lc_0_1')]
             df_stage2['alpha_l'] = -alphas[poly.index('poly_ll_lc_1_0')]
 
-        print('--GNR: stage 2 completed ---------------------')
+        if print_output:
+            print('--GNR: stage 2 completed ---------------------')
          
         # --------------------------- 
         # STAGE 3
         # estimate a fitted value for ln( gross output)
         # ---------------------------
         # 4. plot the fitted gross output
-        print('')
-        print('--GNR: fitted ln(gross output) (single out productivities)')
-        figpath = self.resultpath + '/' + 'GNR' 
-        figname = 'GNR_stage2_fitting'
-        # note here it's a negative sign! By theory!
-        fitted_ly = df_stage2['partialint_m'] + df_stage2['partial_k_l']
-        self.plot_nonpar_fit(df_stage2[ln_gross_output], fitted_ly, figpath,figname)
+        if print_output:
+            print('')
+            print('--GNR: fitted ln(gross output) (single out productivities)')
+            figpath = self.resultpath + '/' + 'GNR' 
+            figname = 'GNR_stage2_fitting'
+            # note here it's a negative sign! By theory!
+            fitted_ly = df_stage2['partialint_m'] + df_stage2['partial_k_l']
+            self.plot_nonpar_fit(df_stage2[ln_gross_output], fitted_ly, figpath,figname)
 
         # --------------------------- 
         # STAGE 4
@@ -397,8 +407,10 @@ class firm_production:
         # output stage1 and stage2 results for further checking
         parameters = [gammas, alphas, poly]
 
-        print('# --- ~ o(*￣▽￣*)o ~')
-        print('# --- Complete GNR !!!  ~ o(*￣▽￣*)o ~')
+        if print_output:
+            print('# --- ~ o(*￣▽￣*)o ~')
+            print('# --- Complete GNR !!!  ~ o(*￣▽￣*)o ~')
+        
         return [alphas_output,df_stage1,df_stage2, parameters]
 
 
