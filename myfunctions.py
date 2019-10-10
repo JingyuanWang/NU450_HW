@@ -15,68 +15,39 @@ from sklearn.utils import resample
 import scipy.optimize as opt
 import itertools as iter
 
-def bootstrap(obj, arguments, beta_hat, beta_initial = None, subsample_size = None, total_times = None):
-    '''This function returns [std_err,var_cov] 
+def bootstrap(df, groupid, estimation ,total_times = 10):
+    beta_all = []
     
-    Input: 
-    -- obj: objective function for the minimization
-    -- arguments: the arguments plut into the objective function (except beta), 
-                  by default the first one should be a dataframe which is the analysis sample.
-                  This should be exact the same as the arguments in the main optimization.
-    -- beta_hat: results from the main optimization. 
-                 We need it here just to get its length (number of parameters).
+    # draw from firm index pool
+    index = df[groupid].unique()
+    # num of firms
+    subsample_num_of_firms = np.ceil(len(index)*0.8).astype(int)
     
-    Optional Input:
-    -- beta_initial: beta_initial for sub-sample optimizations. Default: ones
-    -- subsample_size: Default: ceil(sample_size * 0.8)
-    -- total_times: total times of sub-sampling and optimization. Default: 200
-    '''
-    
-    # STEP 0 clean the input -------------------------------------
-    # (1) 
-    # the first argument should be df, but we want to replace this to some sub-sample
-    df = arguments[0]
-    arguments = arguments[1:]
-    
-    # Optional input default values 
-    # (2) beta_initial for sub-sample optimizations
-    if beta_initial == None:
-        beta_initial = np.ones(len(beta_hat))
-        
-    # (3) subsample_size
-    if subsample_size == None:
-        sample_size = df.shape[0]
-        subsample_size = np.ceil(sample_size * 0.8).astype(int)
-        # 0.8 has no theoretical support! I just randomly come up with this number. Check 480-3 notes for optimal!
-    
-    # (4) total_times
-    if total_times == None:
-        total_times = 200
-    
-    # STEP 1 run the optimization multiple times  -----------------
-    beta = []
     for n in range(0,total_times):
         # resample
-        index = df.index.values
-        sample_index = resample(index, replace = True, n_samples=subsample_size)
-        # optimize
-        results = opt.minimize(obj,beta_initial,args = (df.loc[sample_index],) + arguments )
+        sample_firms = resample(index, replace = True, n_samples=subsample_num_of_firms)
+        subsample = df[df[groupid].isin(sample_firms)]
+        # estimation
+        results = estimation(subsample)
+        betas = results[0]
+        betas = np.fromiter(betas.values(), dtype=float)
         # save beta
-        beta.append(results.x)
+        beta_all.append(betas)
         # print progress every 10 optimizations
         if n%20 == 0:
             print('--{}------'.format(n))
-            print('beta: {}'.format(results.x))
+            print('beta: {}'.format(betas))
             
     # get variance of beta
-    b = np.column_stack(beta)
+    b = np.column_stack(beta_all)
     var_cov = np.cov(b)
     std_err = np.sqrt(np.diag(var_cov))
-    return [std_err,var_cov]
+    return beta_all
+    #return [std_err,var_cov]
 
 
 # generate polynomials
-def gen_poly(df_input, varnames, poly_max):
+def gen_poly(df_input, varnames, poly_max, print_output = True):
     '''given a dataframe and a list of variables:
     generate polynomials of the variables (up to (poly_max)th order) and save to the dataframe
     
@@ -96,7 +67,8 @@ def gen_poly(df_input, varnames, poly_max):
     polynames = '_0'*n
     new_polyvar_name = groupname + polynames
     df[new_polyvar_name] = 1
-    print('-- generate: {} --'.format(new_polyvar_name))
+    if print_output:
+        print('-- generate: {} --'.format(new_polyvar_name))
     
     # STEP 1 just 1 variable, 1st order-highest order: variable it self
     for i in range(n):
@@ -104,7 +76,8 @@ def gen_poly(df_input, varnames, poly_max):
             polynames = '_0'*(i) + '_' + str(j) + '_0' *(n-i-1)
             new_polyvar_name = groupname + polynames
             df[new_polyvar_name] = df[varnames[i]].values**poly_max
-            print('-- generate: {} --'.format(new_polyvar_name))
+            if print_output:
+                print('-- generate: {} --'.format(new_polyvar_name))
     
     # STEP 2 poly 2-poly_max, with number of variables >=2
     lenth = df.shape[0]
@@ -116,7 +89,8 @@ def gen_poly(df_input, varnames, poly_max):
                 varnames_include = [varnames[comb_of_vars[0]]]
                 for i in range(1,n_include):
                     varnames_include = varnames_include + [varnames[comb_of_vars[i]]]
-                print('-- {}'.format(varnames_include))
+                if print_output:
+                    print('-- {}'.format(varnames_include))
             
                 # (2) give each included variable a power
                 cumul_list = list(iter.combinations(range(1,poly_max), n_include-1))
@@ -140,10 +114,11 @@ def gen_poly(df_input, varnames, poly_max):
                     
                     new_polyvar_name = 'poly_' + new_var_name[:-1] + polynames
                     df[new_polyvar_name] = output
-                    print('-- generate: {} --'.format(new_polyvar_name))
+                    if print_output:
+                        print('-- generate: {} --'.format(new_polyvar_name))
                     # end of generating 1 new poly var
-    
-    print('# --- Finish generating polynomials ---')
+    if print_output:
+    	print('# --- Finish generating polynomials ---')
     polynames = [n for n in df.columns.values if n.startswith('poly')]
     
     return [df, polynames]
