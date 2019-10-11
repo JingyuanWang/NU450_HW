@@ -32,7 +32,8 @@ def bootstrap(df, groupid, estimation ,total_times = 10):
         betas = results[0]
         betas = np.fromiter(betas.values(), dtype=float)
         # save beta
-        beta_all.append(betas)
+        if np.isnan(betas).any()==False:
+            beta_all.append(betas)
         # print progress every 10 optimizations
         if n%20 == 0:
             print('--{}------'.format(n))
@@ -75,7 +76,7 @@ def gen_poly(df_input, varnames, poly_max, print_output = True):
         for j in range(1,poly_max+1): 
             polynames = '_0'*(i) + '_' + str(j) + '_0' *(n-i-1)
             new_polyvar_name = groupname + polynames
-            df[new_polyvar_name] = df[varnames[i]].values**poly_max
+            df[new_polyvar_name] = df[varnames[i]].values**j
             if print_output:
                 print('-- generate: {} --'.format(new_polyvar_name))
     
