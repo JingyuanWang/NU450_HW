@@ -199,11 +199,38 @@ class firm_production:
     
 
     def GNR_stage2_partial_integral(self, gammas, df, poly):
-        partial_int = gammas[0]*df[poly[0]] * df[poly[3]]
-        partial_int = partial_int + gammas[1] * df[poly[1]] * df[poly[3]]
-        partial_int = partial_int + gammas[2] * df[poly[2]] * df[poly[3]]
-        partial_int = partial_int + (gammas[3]/2) * df[poly[3]]**2
-        return partial_int
+        if len(gammas) == 4:
+            partial_int = (gammas[0]*df[poly[0]] * df[poly[3]]
+                             + gammas[1] * df[poly[1]] * df[poly[3]]
+                             + gammas[2] * df[poly[2]] * df[poly[3]]
+                             + (gammas[3]/2) * df[poly[3]]**2 )
+
+            elas_k_part1 = gammas[1] * df[poly[3]] 
+            elas_l_part1 = gammas[2] * df[poly[3]]
+
+        if len(gammas) == 10:
+            partial_int = (gammas[poly.index('poly_lc_ll_lm_0_0_0')] * df['lm'] 
+                         + gammas[poly.index('poly_lc_ll_lm_1_0_0')] * df['lc'] * df['lm']
+                         + gammas[poly.index('poly_lc_ll_lm_0_1_0')] * df['ll'] * df['lm'] 
+                         + gammas[poly.index('poly_lc_ll_lm_0_0_1')] * df['lm'] * df['lm'] * 1/2
+                         + gammas[poly.index('poly_lc_ll_lm_2_0_0')] * df['lc']**2 * df['lm']
+                         + gammas[poly.index('poly_lc_ll_lm_0_2_0')] * df['ll']**2 * df['lm']
+                         + gammas[poly.index('poly_lc_ll_lm_0_0_2')] * df['lm']**2 * df['lm'] * 1/3
+                         + gammas[poly.index('poly_lc_ll_1_1')] * df['lc'] * df['ll'] * df['lm']
+                         + gammas[poly.index('poly_lc_lm_1_1')] * df['lc'] * df['lm'] * df['lm'] * 1/2
+                         + gammas[poly.index('poly_ll_lm_1_1')] * df['ll'] * df['lm'] * df['lm'] * 1/2 )
+
+            elas_k_part1 = (gammas[poly.index('poly_lc_ll_lm_1_0_0')] * df['lm']
+                          + gammas[poly.index('poly_lc_ll_lm_2_0_0')] * df['lc'] * df['lm'] * 2 
+                          + gammas[poly.index('poly_lc_ll_1_1')] * df['ll'] * df['lm']
+                          + gammas[poly.index('poly_lc_lm_1_1')] * df['lm'] * df['lm'] * 1/2 )
+
+            elas_l_part1 = (gammas[poly.index('poly_lc_ll_lm_0_1_0')] * df['lm'] 
+                          + gammas[poly.index('poly_lc_ll_lm_0_2_0')] * df['ll'] * df['lm'] * 2
+                          + gammas[poly.index('poly_lc_ll_1_1')] * df['lc'] * df['lm'] 
+                          + gammas[poly.index('poly_ll_lm_1_1')] * df['lm'] * df['lm'] * 1/2)
+
+        return [partial_int,elas_k_part1,elas_l_part1]
 
     def GNR_stage2_g_markov(self, delta, alphas, df , lag_poly):
         L_omega = df['L_phi'] + df[lag_poly].values@alphas
@@ -221,10 +248,9 @@ class firm_production:
         return sum((LHS-RHS)**2)
 
 
-    def GNR(self, df_input, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry = None, stage2_polymax = 2, print_output = True):
+    def GNR(self, df_input, ln_gross_output, statevar, flexiblevar, price_m, price_y, industry = None, stage1_polymax = 1, stage2_polymax = 2, print_output = True):
         '''GNR production estimation'''
 
-        stage1_polymax = 1
         # will put this back to an input argument. But now the integral function is not general enough
         # check GNR_stage2_partial_integral
         # also the optimization does not work with poly >= 2 !!!
@@ -292,7 +318,7 @@ class firm_production:
 
         # 4. partial out the part correlated with flexible input
         # prepare for stage 2
-        df_stage1['partialint_m'] = self.GNR_stage2_partial_integral(gammas, df_stage1, poly)
+        [df_stage1['partialint_m'],df_stage1['elas_k_part1'],df_stage1['elas_l_part1']] = self.GNR_stage2_partial_integral(gammas, df_stage1, poly)
         df_stage1['phi'] = df_stage1[ln_gross_output] - df_stage1['partialint_m'] - eps
         if print_output:
             print('--GNR: stage 1 completed --------------------- ')
@@ -372,6 +398,10 @@ class firm_production:
         if stage2_polymax == 1:
             df_stage2['alpha_k'] = -alphas[poly.index('poly_ll_lc_0_1')]
             df_stage2['alpha_l'] = -alphas[poly.index('poly_ll_lc_1_0')]
+
+        # account for part1_elasticities
+        df_stage2['alpha_k'] = df_stage2['alpha_k'] + df_stage2['elas_k_part1']
+        df_stage2['alpha_l'] = df_stage2['alpha_l'] + df_stage2['elas_l_part1']
 
         if print_output:
             print('--GNR: stage 2 completed ---------------------')
