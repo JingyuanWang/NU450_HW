@@ -78,6 +78,9 @@ gen industry_id = s01*1+s02*2+s03*3+s04*4+s05*5+s06*6+s07*7+s08*8+s09*9+s10*10+s
 * 4. output var
 gen ly_va = log(exp(ly)-exp(lm-lp+lwm))
 * must be in this format to account for deflation
+label var ly "lg(Gross Output)"
+label var ly_va "lg(Value Added)"
+
 
 * 5. save
 order industry_id firm_id year obs ly ly_va 
