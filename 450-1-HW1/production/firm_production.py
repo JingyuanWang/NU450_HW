@@ -4,11 +4,11 @@
 # ------------------------------------------------------------------------
 # Purpose:
 # define class: Productivity, with method:
-#     1. balance()
-#     2. ()
-#     3. ...
+#     0. basic input arguments: i.e. give a dataframe, set ids, ...
+#     1. balance_panel(): get a balanced panel from unbalanced panel data and output a statistics of the panel
+#     2. GNR(): GNR productivity estimation
 # 
-# To do:
+# Incomplete:
 # GNR jacobian
 # ------------------------------------------------------------------------
 '''
@@ -171,7 +171,7 @@ class firm_production:
         return table
 
 
-    # III. regressions ----------------------------------------------------
+    # III. GNR ----------------------------------------------------------
 
     def GNR_stage1_obj(self,beta, df, share, poly):
         x = df[poly].values@beta
