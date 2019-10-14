@@ -32,4 +32,4 @@ net install st0145_2, force
 net install st0060
 net install st0460
 net install sg71
-ssc install xtabond2, replace
+*ssc install xtabond2, replace
