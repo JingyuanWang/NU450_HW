@@ -81,7 +81,7 @@ def gen_poly(df_input, varnames, poly_max, print_output = True):
                 print('-- generate: {} --'.format(new_polyvar_name))
     
     # STEP 2 poly 2-poly_max, with number of variables >=2
-    lenth = df.shape[0]
+    length = df.shape[0]
 
     for poly_max in range(2,poly_max+1):
         for n_include in range(2,n+1):
@@ -105,11 +105,11 @@ def gen_poly(df_input, varnames, poly_max, print_output = True):
                     power[1:] = [cumul[i + 1] - cumul[i] for i in range(len(cumul)-1)]
                     power.append(poly_max-cumul[-1])
                 
-                    output = np.zeros(lenth)
+                    output = np.ones(length)
                     new_var_name = ''
                     polynames = ''
                     for var in range(n_include):
-                        output = output + df[varnames_include[var]].values**power[var]
+                        output = output * df[varnames_include[var]].values**power[var]
                         new_var_name = new_var_name + varnames_include[var] + '_'
                         polynames = polynames + '_' + str(power[var])
                     
