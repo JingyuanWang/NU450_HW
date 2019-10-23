@@ -4,8 +4,9 @@
 # ------------------------------------------------------------------------
 # Purpose: 
 # define my functions
-#     1. bootstrap
-#     2. gen_poly
+#     1. hist_and_kdensity
+#     2. hist_and_kdensity_bygroup
+#     3. gen_poly
 # ------------------------------------------------------------------------
 '''
 
@@ -14,43 +15,79 @@ import pandas as pd
 from sklearn.utils import resample
 import scipy.optimize as opt
 import itertools as iter
+import matplotlib.pyplot as plt
 
-def bootstrap(df, groupid, estimation ,total_times = 10):
-    beta_all = []
+
+# I. plot histogram and a kernal density 
+
+
+def hist_and_kdensity(variable_series, var_label, save = False, figpath = None, figname = None):
+    '''plot histogram and a kernal density 
+    input: a series, and x_label '''
+
+    # Figure parameters
+    area = np.pi*3
+
+    # Plot the figure
+    plt.figure()
+    # hist and kernel density
+    plt.hist(variable_series, density = True, bins =16, color= [0.9, 0.9, 0.9])
+    variable_series.plot.kde()
     
-    # draw from firm index pool
-    index = df[groupid].unique()
-    # num of firms
-    subsample_num_of_firms = np.ceil(len(index)*0.8).astype(int)
+    # axis
+    plt.xlabel(var_label)
+    max_value = max(variable_series)
+    min_value = min(variable_series)
+    plt.xlim(min_value,max_value)
     
-    for n in range(0,total_times):
-        # resample
-        sample_firms = resample(index, replace = True, n_samples=subsample_num_of_firms)
-        subsample = df[df[groupid].isin(sample_firms)]
-        # estimation
-        results = estimation(subsample)
-        betas = results[0]
-        betas = np.fromiter(betas.values(), dtype=float)
-        # save beta
-        if np.isnan(betas).any()==False:
-            beta_all.append(betas)
-        # print progress every 10 optimizations
-        if n%20 == 0:
-            print('--{}------'.format(n))
-            print('beta: {}'.format(betas))
-            
-    # get variance of beta
-    b = np.column_stack(beta_all)
-    var_cov = np.cov(b)
-    std_err = np.sqrt(np.diag(var_cov))
-    return beta_all
-    #return [std_err,var_cov]
+    # save
+    if save:
+        filename = figpath + '/' + figname + '.png'
+        plt.savefig(filename)
+
+    plt.show()
+
+def hist_and_kdensity_bygroup(df, varname, var_label, groupname, group_label, save = False, figpath = None, figname = None):
+    ''' Histogram of all values, kernel densities for each group.
+    Input:
+    -- df: a data frame with the variable of interest and the group variable'''
+
+    # Figure parameters
+    area = np.pi*3
+
+    # Plot the figure
+    plt.figure()
+    # hist and kernel density
+    value_all_groups = df[varname]
+    plt.hist(value_all_groups, density = True, bins =16,color= [0.9, 0.9, 0.9], label = 'all {}s'.format(group_label))
+    
+    for i in df[groupname].unique():
+        value_group = df.loc[df[groupname] == i,varname]
+        value_group.plot.kde( label = '{} {}'.format(group_label,i))
+    
+    # axis
+    plt.xlabel(var_label)
+    max_value = max(value_all_groups)
+    min_value = min(value_all_groups)
+    plt.xlim(min_value,max_value)
+    
+    # legend
+    plt.legend(loc = 'best')
+    
+    # save
+    if save:
+        filename = figpath + '/' + figname + '.png'
+        plt.savefig(filename)
+
+    plt.show()
 
 
-# generate polynomials
+
+# II. generate polynomials
+
 def gen_poly(df_input, varnames, poly_max, print_output = True):
     '''given a dataframe and a list of variables:
-    generate polynomials of the variables (up to (poly_max)th order) and save to the dataframe
+    generate polynomials of intersections of these variables (up to (poly_max)th order) and save to the dataframe
     
     return: the new dataframe and a list of polynomial variable names'''
     

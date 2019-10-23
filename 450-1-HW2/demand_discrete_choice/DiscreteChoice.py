@@ -21,10 +21,20 @@
 
 import numpy as np
 import pandas as pd
+import os,sys,inspect
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 import itertools as it
 import copy
+import importlib
+
+# mine
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0,parentdir) 
+
+import myfunctions as mf
+importlib.reload(mf)
 
 # random seed
 np.random.seed(seed=13344)
@@ -85,15 +95,16 @@ class DiscreteChoice:
 
     # 2. set ids
     # give ids a standardized name: product_id, consumer_id, market_id
-    
+
 
     # II. Simulate consumer choice ---------------------------------------------------
     # give all the observables, unobservables, and true parameters
     # simulate choice, estimate consumer welfare, and firm profit
 
-    def simulation():
-        self.simulate_consumer_choice()
-        self.simulate_firm_profit()
+    def simulation(self,):
+        self.simulate_consumer_choice(product_attribute_observed, product_attribute_unobs, price, taste, price_sensitivity, eps)
+        self.simulate_firm_profit(cost_attribute_observed, cost_input_coeff, error_term)
+
 
     # Consumers:
     def consumer_utility_ij(self, product_attribute_observed, product_attribute_unobs, price, taste, price_sensitivity, eps):
@@ -122,6 +133,15 @@ class DiscreteChoice:
         #    consumer_product: utility_ijm, max_u_im, choice_im
         #    consumers: choice, utility
         #    products: sales
+        for var in ['utility_ijm', 'max_u_im', 'choice_im']:
+            if var in self.consumer_product.columns:
+                self.consumer_product.rename(columns = {var: '{}_old'.format(var)}, inplace = True)
+        for var in ['choice','utility']:
+            if var in self.consumers.columns:
+                self.consumers.rename(columns = {var: '{}_old'.format(var)}, inplace = True)
+        for var in ['sales']:
+            if var in self.products.columns:
+                self.products.rename(columns = {var: '{}_old'.format(var)}, inplace = True)
 
         # I. make a choice
         # 1. calculate utility for each consumer-product
@@ -134,7 +154,8 @@ class DiscreteChoice:
                                         right_on = ['consumer_id','market_id'])
 
         # 3. chose the product with max utility
-        self.consumer_product['choice_im'] = ( self.consumer_product['utility_ijm'] == self.consumer_product['max_u_im'] ).astype(int)
+        self.consumer_product['choice_im'] = (self.consumer_product['utility_ijm'] == self.consumer_product['max_u_im'] ).astype(int)
+        self.consumer_product.loc[self.consumer_product['max_u_im'] <= 0 ,'choice_im'] = 0
 
         # II. output
         # 1. save to consumer dataframe
@@ -150,7 +171,7 @@ class DiscreteChoice:
                         right_index = True)
 
         # total welfare:
-        total_welfare = self.consumers[['market_id','utility']].groupby('market_id').sum()
+        total_welfare = self.consumers['utility'].sum()
 
         # 2. save the total sales to product dataframe
         sales = (self.consumer_product.pivot_table(values = 'choice_im',
@@ -163,7 +184,8 @@ class DiscreteChoice:
                 right_index = True)
 
         # 3. return total welfare
-        return total_welfare
+        print('Total welfare = {}'.format(total_welfare))
+
 
     # Firm:
     def firm_marginal_cost(self, cost_attribute_observed, cost_input_coeff, error_term):
@@ -172,17 +194,24 @@ class DiscreteChoice:
         marginal_cost = df[cost_attribute_observed].values@cost_input_coeff[1:] + cost_input_coeff[0] + df[error_term]
         return marginal_cost 
 
-    def simulate_firm_profit(self, cost_attribute_observed, cost_input_coeff, error_term):
+    def simulate_firm_profit(self, cost_attribute_observed, price, cost_input_coeff, error_term):
         '''simulate firm's profit, given sales quantity, marginal cost, and prices'''
+
+        # 0. make sure there were not such variables: 
+        #    products: marginal_cost, profit_jm
+        for var in ['marginal_cost', 'profit_jm']:
+            if var in self.products.columns:
+                self.products.rename(columns = {var: '{}_old'.format(var)}, inplace = True)
 
         # 1. calculate profit for each market-product
         self.products['marginal_cost'] = self.firm_marginal_cost(cost_attribute_observed, cost_input_coeff, error_term)
-        self.products['profit_jm'] = (self.products['price'] - self.products['marginal_cost']) * self.products['sales']
+        self.products['profit_jm'] = (self.products[price] - self.products['marginal_cost']) * self.products['sales']
         
         # 2. output total profit for each firm:
         total_profit = self.products[['product_id','profit_jm']].groupby('product_id').sum().rename(columns = {'profit_jm':'total_profit'})
 
-        return total_profit
+        print('Total Profits of each firm (product) = ')
+        print(total_profit)
 
 
     # III. Estimate ---------------------------------------------------
