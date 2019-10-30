@@ -51,9 +51,26 @@ class DiscreteChoice:
        -- estimation '''
 
     # get the main dataframe (and get the set of variables)
-    def __init__(self, df_consumer, consumer_ids, df_product, product_ids, true_parameters = None, df_consumer_product=None):
-
+    def __init__(self, df_consumer, consumer_ids, df_product, product_ids, add_outside_option, true_parameters = None, df_consumer_product=None):
+        '''initialize a dataclass for discrete demand system analysis
+        
+        Input:
+        (1) consumer
+        -- df_consumer: dataframe of consumers, 1 row = 1 consumer or 1 market-consumer
+        -- consumer_ids: list of str, variable names of consumer ids in df_consumer
+        (2) products
+        -- df_product: dataframe of products, 1 row = 1 product or 1 market-product 
+        -- product_ids: list of str, variable names of consumer ids in df_product
+        -- add_outside_option: True or False, True: want to add a row of 0 for each market. 
+                                              False: do not need to add. if the df_product alread have a row of 0, or consumers are forced to buy something
+        (3) optional input:
+        -- true_parameter: if it's simulated data and have true_parameters, input a dictionary and save
+        -- df_consumer_product: a merged and expanded panel df, 1 row = 1 consumer-product. (ready for MLE analysis) 
+                                if input = None, will generate one automatically '''
+        
         # get the data
+        if add_outside_option:
+            self.add_outside_option(df_product, product_ids)
         self.products = df_product
         self.consumers = df_consumer
         if df_consumer_product != None:
@@ -66,6 +83,22 @@ class DiscreteChoice:
             self.true_par = true_parameters
 
     # I. basic functions ----------------------------------------------------
+    # 0. add outside option to df_product
+    def add_outside_option(self, df_product, product_ids):
+        df = df_product.copy()
+        # want to assign id = 0 to the outside option ==> first replace the ids for all product to id+1
+        df['product_id'] = df['product_id'] + 1
+        
+        # for each market, add the outside option
+        variables = df_product.columns
+        
+        for year, frame in df.groupby(['market_id']):
+            # (1). get choice set for each year 
+            one_row = frame.iloc[0]
+            for var in variables:
+                one_row[var] = 0
+            frame.append(one_row)
+    
     # 1. construct panel
     def construct_panel_consumer_product(self, df_consumer, consumer_ids, df_product, product_ids):
         '''construct the dataframe consumer_product (length = I*J) from cosumers dataframe (length=I) and products dataframe (lenght = J)
@@ -323,11 +356,11 @@ class DiscreteChoice:
         total_expscore = df.groupby('market_id').agg({'expscore': np.sum}).rename(columns = {'expscore':'total_expscore'})
         # notice here we ignore outside option for a sec
         df = pd.merge(df, total_expscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
-        #df['prob'] = np.exp(df['score'])/ (df['total_expscore'] + np.exp(0 - df['max_score']) ) # re-consider the outside option
-        df['prob'] = np.exp(df['score'])/ (df['total_expscore'] + 1 ) # re-consider the outside option
+        #df['prob'] = df['expscore']/ (df['total_expscore'] + np.exp(0 - df['max_score']) ) # re-consider the outside option
+        df['prob'] = df['expscore']/ (df['total_expscore'] + 1 ) # re-consider the outside option
 
         # 4. return 
-        probability = df['prob']
+        probability = df['prob']_
         
         return probability
     
