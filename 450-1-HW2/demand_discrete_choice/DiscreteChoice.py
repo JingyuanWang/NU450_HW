@@ -13,26 +13,28 @@
 #   i: index of consumer
 #   I: total number of consumers
 #   j: number of products
+#   J: total number of products
 # reg:
 #   k: length of beta = length of product attributes (no constant)
-#   q: length of IV+exogenous RHS vars = moment conditions ------------------------------------------------------------------------
-# test
+#   q: length of IV+exogenous RHS vars = moment conditions 
+# ------------------------------------------------------------------------
 '''
+
 
 import numpy as np
 import pandas as pd
 import os,sys,inspect
 import scipy.stats as stats
+import scipy.integrate as integrate
 import matplotlib.pyplot as plt
 import itertools as it
 import copy
 import importlib
 
 # mine
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir)
-sys.path.insert(0,parentdir) 
-
+directory = '/Users/jingyuanwang/GitHub/NU450_HW'
+if directory not in sys.path:
+    sys.path.insert(0,directory)  
 import myfunctions as mf
 importlib.reload(mf)
 
@@ -40,8 +42,13 @@ importlib.reload(mf)
 np.random.seed(seed=13344)
 
 class DiscreteChoice:
-    ''' Samples for logit demand analysis
-    main part: a dataframe storing ids, Y(choices), X(attributes)'''
+    '''Samples for Discrete Choice Demand system estimation
+    main part: 
+    -- 3 dataframs, consumers, products, consumer_product
+    -- functions: 
+       -- stats
+       -- simulation
+       -- estimation '''
 
     # get the main dataframe (and get the set of variables)
     def __init__(self, df_consumer, consumer_ids, df_product, product_ids, true_parameters = None, df_consumer_product=None):
@@ -61,6 +68,16 @@ class DiscreteChoice:
     # I. basic functions ----------------------------------------------------
     # 1. construct panel
     def construct_panel_consumer_product(self, df_consumer, consumer_ids, df_product, product_ids):
+        '''construct the dataframe consumer_product (length = I*J) from cosumers dataframe (length=I) and products dataframe (lenght = J)
+        
+        Input:
+        --df_consumer
+        --consumer_ids: list of strs, names of consumer id variables
+        --df_product
+        --product_ids: list of strs, names of product id variables
+
+        Note:
+        ids much be continuous. This can be easily relaxed by changing the count().max() to just max() '''
 
         num_of_market = max(len(df_product[consumer_ids['market_id']].unique()),  
                             len(df_product[product_ids['market_id']].unique()) )
@@ -100,11 +117,6 @@ class DiscreteChoice:
     # II. Simulate consumer choice ---------------------------------------------------
     # give all the observables, unobservables, and true parameters
     # simulate choice, estimate consumer welfare, and firm profit
-
-    def simulation(self,):
-        self.simulate_consumer_choice(product_attribute_observed, product_attribute_unobs, price, taste, price_sensitivity, eps)
-        self.simulate_firm_profit(cost_attribute_observed, cost_input_coeff, error_term)
-
 
     # Consumers:
     def consumer_utility_ij(self, product_attribute_observed, product_attribute_unobs, price, taste, price_sensitivity, eps):
@@ -215,11 +227,110 @@ class DiscreteChoice:
 
 
     # III. Estimate ---------------------------------------------------
-     
 
+    # a function: given delta, get s, constraint of 
+    def products_social_ave_valuation_TO_market_share_slowbutaccurate(self, sigma_p, delta, price, print_progress = False):
+        ''' A function predict the market share of each product 
+        using product social average valuation, delta, 
+        and parameters on consumers' tastes randomness on x, an observable product character.
+        
+        Input:
+        --deltas is a series of product characterisctic: num_prod by 1. 
+        --sigma_p is a scalar, variance of random taste on price 
+        --price, str, price col name in df_input 
+        --self, self gives the products dataset, including all product attributes'''
 
+        df = self.products.copy()
 
+        shares = np.zeros(len(df))
+        
+        # could write a simulation though, but since it's just 1 dim, use build-in integral function from scipyß
+        for i in range(len(shares)):
+            shares[i] = integrate.quad(lambda v: 
+                                      self.one_consumer_prob_on_each_prod( v_ip = v, delta = delta, sigma_p = sigma_p, price = price)[i] * stats.norm.pdf(v)
+                                      ,-np.inf,
+                                      np.inf)[0]
+            if print_progress:
+                if i % 20 == 0:
+                    print('complete simulating {}th element of the share'.format(i))
 
+        return shares
+
+    def products_social_ave_valuation_TO_market_share(self, sigma_p, delta, price, print_progress = False):
+        ''' A function predict the market share of each product 
+        using product social average valuation, delta, 
+        and parameters on consumers' tastes randomness on x, an observable product character.
+        
+        Input:
+        --deltas is a series of product characterisctic: num_prod by 1. 
+        --sigma_p is a scalar, variance of random taste on price 
+        --price, str, price col name in df_input 
+        --self, self gives the products dataset, including all product attributes'''
+
+        df = self.products.copy()
+
+        shares = np.zeros(len(df))
+        
+        # could write a simulation though, but since it's just 1 dim, use build-in integral function from scipyß
+        for i in range(len(shares)):
+            shares[i] = integrate.quad(lambda v: 
+                                      self.one_consumer_prob_on_each_prod( v_ip = v, delta = delta, sigma_p = sigma_p, price = price)[i] * stats.lognorm.pdf(v)
+                                      ,0,
+                                      np.inf)[0]
+            if print_progress:
+                if i % 20 == 0:
+                    print('complete simulating {}th element of the share'.format(i))
+
+        return shares
+
+    def one_consumer_utility_driven_by_random_coeff(self, df, v_ip , sigma_p, price):
+        '''Calculate the random utility part for 1 consumer
+
+        Input:
+        --v_ip is 1-dim 
+
+        Note:
+        This function is supposed to have another input: product_attribute_observed,
+        but in the HW, only price sensitivity is random '''    
+        
+        mu_ij = -df[price] * sigma_p * v_ip
+         
+        # return a vector, length = i*j-by-1, same order as self.products
+        return mu_ij
+
+    def one_consumer_prob_on_each_prod(self, v_ip , delta, sigma_p, price):
+        '''v_ip is 1-dim '''
+        #df = df_input.copy()
+        df = self.products.copy()
+        
+        # 1.calculate the random part:
+        mu = self.one_consumer_utility_driven_by_random_coeff(df, v_ip, sigma_p, price)
+        
+        # 2.the score for each product
+        df['score'] = delta + mu
+        # later on we will do \[prob = exp(score)/sum( exp(score)  of all product offered) \] for each person
+        # to avoid exp(something large) = inf:
+        #     for each person, 
+        #         devide the denominator and numerator by exp(max product score for this person)
+        #         equivalent to 
+        #         score for each product - max score 
+        #maxscore = df.groupby('market_id').agg({'score':np.max}).rename(columns = {'score':'max_score'})
+        #df = pd.merge(df,maxscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
+        #df['score'] = df['score'] - df['max_score']
+        
+        # 3. calculate a probability of chosing each product for each consumer, based on the score
+        df['expscore'] = np.exp(df['score'])
+        total_expscore = df.groupby('market_id').agg({'expscore': np.sum}).rename(columns = {'expscore':'total_expscore'})
+        # notice here we ignore outside option for a sec
+        df = pd.merge(df, total_expscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
+        #df['prob'] = np.exp(df['score'])/ (df['total_expscore'] + np.exp(0 - df['max_score']) ) # re-consider the outside option
+        df['prob'] = np.exp(df['score'])/ (df['total_expscore'] + 1 ) # re-consider the outside option
+
+        # 4. return 
+        probability = df['prob']
+        
+        return probability
+    
     # IV. visualize  ------------------------------------------------------
 
 
