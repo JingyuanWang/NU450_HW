@@ -41,6 +41,58 @@ importlib.reload(mf)
 # random seed
 np.random.seed(seed=13344)
 
+# ---------------------------------------------------------------------------------
+# function 
+# ---------------------------------------------------------------------------------
+def add_outside_option(df_product, product_ids):
+    '''add outside options '''
+
+    df = df_product.copy()
+    market_id = product_ids['market_id']
+    product_id = product_ids['product_id']
+
+    # get a row for each market
+    outside_option = df.groupby(market_id).first()
+    
+    # want to assign id = 0 to the outside option ==> first replace the ids for all product to id+1
+    df[product_id] = df[product_id] + 1
+
+    # replace the values to 0 
+    for var in outside_option.columns:
+        outside_option[var] = 0
+    
+
+    output = (df.append(outside_option.reset_index(), ignore_index=True, sort = False)
+              .sort_values([market_id, product_id])
+              .reset_index(drop=True)
+             )
+
+    # share should sum up to 1
+    total_shares = output.groupby('market_id').agg({'shares':np.sum}).rename(columns = {'shares':'total_share'})
+    output = output.merge(total_shares, on = 'market_id')
+    output.loc[output['product_id'] == 0,'shares'] = 1 - output['total_share']
+    output.drop(columns = 'total_share', inplace = True)
+    
+    return output
+
+def random_draw(n, seed):
+    '''draw n v_ips randomly from N(0,1)
+    
+    Input:
+    --n, int, length of the output vector.
+    --seed, random seeed'''
+    np.random.seed(seed=seed)
+    
+    #v = np.random.normal(loc=0.0, scale=1.0, size=n)
+    v = np.random.lognormal(mean=0.0, sigma=1.0, size=n)
+    
+    return v
+
+
+# ---------------------------------------------------------------------------------
+# Class
+# ---------------------------------------------------------------------------------
+
 class DiscreteChoice:
     '''Samples for Discrete Choice Demand system estimation
     main part: 
@@ -51,7 +103,7 @@ class DiscreteChoice:
        -- estimation '''
 
     # get the main dataframe (and get the set of variables)
-    def __init__(self, df_consumer, consumer_ids, df_product, product_ids, add_outside_option, true_parameters = None, df_consumer_product=None):
+    def __init__(self, df_consumer, consumer_ids, df_product, product_ids, include_outside_option, true_parameters = None, df_consumer_product=None):
         '''initialize a dataclass for discrete demand system analysis
         
         Input:
@@ -61,7 +113,7 @@ class DiscreteChoice:
         (2) products
         -- df_product: dataframe of products, 1 row = 1 product or 1 market-product 
         -- product_ids: list of str, variable names of consumer ids in df_product
-        -- add_outside_option: True or False, True: want to add a row of 0 for each market. 
+        -- include_outside_option: True or False, True: want to add a row of 0 for each market. 
                                               False: do not need to add. if the df_product alread have a row of 0, or consumers are forced to buy something
         (3) optional input:
         -- true_parameter: if it's simulated data and have true_parameters, input a dictionary and save
@@ -69,9 +121,10 @@ class DiscreteChoice:
                                 if input = None, will generate one automatically '''
         
         # get the data
-        if add_outside_option:
-            self.add_outside_option(df_product, product_ids)
-        self.products = df_product
+        if include_outside_option:
+            self.products = add_outside_option(df_product, product_ids)
+        else:
+        	self.products = df_product.sort_values([product_ids['market_id'], product_ids['product_id']]).reset_index(drop=True)
         self.consumers = df_consumer
         if df_consumer_product != None:
         	self.consumer_product = df_consumer_product
@@ -83,22 +136,6 @@ class DiscreteChoice:
             self.true_par = true_parameters
 
     # I. basic functions ----------------------------------------------------
-    # 0. add outside option to df_product
-    def add_outside_option(self, df_product, product_ids):
-        df = df_product.copy()
-        # want to assign id = 0 to the outside option ==> first replace the ids for all product to id+1
-        df['product_id'] = df['product_id'] + 1
-        
-        # for each market, add the outside option
-        variables = df_product.columns
-        
-        for year, frame in df.groupby(['market_id']):
-            # (1). get choice set for each year 
-            one_row = frame.iloc[0]
-            for var in variables:
-                one_row[var] = 0
-            frame.append(one_row)
-    
     # 1. construct panel
     def construct_panel_consumer_product(self, df_consumer, consumer_ids, df_product, product_ids):
         '''construct the dataframe consumer_product (length = I*J) from cosumers dataframe (length=I) and products dataframe (lenght = J)
@@ -216,7 +253,7 @@ class DiscreteChoice:
                         right_index = True)
 
         # total welfare:
-        total_welfare = self.consumers['utility'].sum()
+        total_welfare = self.consumers.loc[self.consumers['choice'] != 0,'utility'].sum()
 
         # 2. save the total sales to product dataframe
         sales = (self.consumer_product.pivot_table(values = 'choice_im',
@@ -250,6 +287,7 @@ class DiscreteChoice:
 
         # 1. calculate profit for each market-product
         self.products['marginal_cost'] = self.firm_marginal_cost(cost_attribute_observed, cost_input_coeff, error_term)
+        self.products.loc[ self.products['product_id'] == 0, 'marginal_cost'] = 0 # outside option
         self.products['profit_jm'] = (self.products[price] - self.products['marginal_cost']) * self.products['sales']
         
         # 2. output total profit for each firm:
@@ -259,10 +297,14 @@ class DiscreteChoice:
         print(total_profit)
 
 
-    # III. Estimate ---------------------------------------------------
+    # III. Estimate --------------------------------------------------------------------
 
-    # a function: given delta, get s, constraint of 
-    def products_social_ave_valuation_TO_market_share_slowbutaccurate(self, sigma_p, delta, price, print_progress = False):
+    # ------------------------------------------
+    # function group 1: 
+    # given delta, get shares
+    # ------------------------------------------
+    
+    def products_social_ave_valuation_TO_market_share_Slowbutaccurate(self, delta, sigma_p, price, print_progress = False):
         ''' A function predict the market share of each product 
         using product social average valuation, delta, 
         and parameters on consumers' tastes randomness on x, an observable product character.
@@ -279,37 +321,10 @@ class DiscreteChoice:
         
         # could write a simulation though, but since it's just 1 dim, use build-in integral function from scipyß
         for i in range(len(shares)):
-            shares[i] = integrate.quad(lambda v: 
-                                      self.one_consumer_prob_on_each_prod( v_ip = v, delta = delta, sigma_p = sigma_p, price = price)[i] * stats.norm.pdf(v)
-                                      ,-np.inf,
-                                      np.inf)[0]
-            if print_progress:
-                if i % 20 == 0:
-                    print('complete simulating {}th element of the share'.format(i))
-
-        return shares
-
-    def products_social_ave_valuation_TO_market_share(self, sigma_p, delta, price, print_progress = False):
-        ''' A function predict the market share of each product 
-        using product social average valuation, delta, 
-        and parameters on consumers' tastes randomness on x, an observable product character.
-        
-        Input:
-        --deltas is a series of product characterisctic: num_prod by 1. 
-        --sigma_p is a scalar, variance of random taste on price 
-        --price, str, price col name in df_input 
-        --self, self gives the products dataset, including all product attributes'''
-
-        df = self.products.copy()
-
-        shares = np.zeros(len(df))
-        
-        # could write a simulation though, but since it's just 1 dim, use build-in integral function from scipyß
-        for i in range(len(shares)):
-            shares[i] = integrate.quad(lambda v: 
-                                      self.one_consumer_prob_on_each_prod( v_ip = v, delta = delta, sigma_p = sigma_p, price = price)[i] * stats.lognorm.pdf(v)
-                                      ,0,
-                                      np.inf)[0]
+            shares[i] = integrate.quad(lambda v:
+                self.one_consumer_prob_on_each_prod(v_ip = v, delta = delta, sigma_p = sigma_p, price = price)[i] * stats.lognorm.pdf(v, s = 1)
+                , 0, np.inf)[0]
+            
             if print_progress:
                 if i % 20 == 0:
                     print('complete simulating {}th element of the share'.format(i))
@@ -336,33 +351,89 @@ class DiscreteChoice:
         #df = df_input.copy()
         df = self.products.copy()
         
+        # I. calculate the probability --------------------------------------------------------------
         # 1.calculate the random part:
         mu = self.one_consumer_utility_driven_by_random_coeff(df, v_ip, sigma_p, price)
         
         # 2.the score for each product
-        df['score'] = delta + mu
+        df['delta'] = delta
+        df['mu'] = mu
+        df['score'] = df['delta'] + df['mu']
         # later on we will do \[prob = exp(score)/sum( exp(score)  of all product offered) \] for each person
         # to avoid exp(something large) = inf:
         #     for each person, 
         #         devide the denominator and numerator by exp(max product score for this person)
         #         equivalent to 
         #         score for each product - max score 
-        #maxscore = df.groupby('market_id').agg({'score':np.max}).rename(columns = {'score':'max_score'})
-        #df = pd.merge(df,maxscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
-        #df['score'] = df['score'] - df['max_score']
+        maxscore = df.groupby('market_id').agg({'score':np.max}).rename(columns = {'score':'max_score'})
+        df = pd.merge(df,maxscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
+        df['score'] = df['score'] - df['max_score']
         
         # 3. calculate a probability of chosing each product for each consumer, based on the score
         df['expscore'] = np.exp(df['score'])
         total_expscore = df.groupby('market_id').agg({'expscore': np.sum}).rename(columns = {'expscore':'total_expscore'})
-        # notice here we ignore outside option for a sec
         df = pd.merge(df, total_expscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
-        #df['prob'] = df['expscore']/ (df['total_expscore'] + np.exp(0 - df['max_score']) ) # re-consider the outside option
-        df['prob'] = df['expscore']/ (df['total_expscore'] + 1 ) # re-consider the outside option
+        df['prob'] = df['expscore']/ df['total_expscore']  # do not need to + 1, because we already have the outside option as an row
 
-        # 4. return 
-        probability = df['prob']_
+
+        # II. check and return values ---------------------------------------------------------------
+        # check whether prob for each person sum up to 1
+        total_prob = df.groupby('market_id').agg({'prob': np.sum})
+        tol = 10**(-10)
+        if len(total_prob.loc[abs(total_prob['prob'] -1) > tol]) != 0:
+            self.problem_df = df
+            self.problem_total_prob = total_prob
+            print("probability does not sum up to 1 (or because of NaN/inf), return the dataframe to self.problem_df, self.problem_total_prob")
+        
+        # make sure the output probability is in the order as the main dataframe
+        probability = df['prob']
         
         return probability
+
+    # -------------------------------------------
+    # function group 2: simulated integral
+    # -------------------------------------------
+    def products_social_ave_valuation_TO_market_share_simulated_integral(self, delta, sigma_p, price, n_init = 1000, seed_init = 13344, tol = 1e-1, print_progress = False):    
+
+        var = 9999 # any big value could work
+        n = n_init 
+        maxiter = 5 # must < 20, or change sample_id * 20
+        
+        # calculate the simulated integral 8 times using 8 seeds, it should converge: var <= tol
+        # if not converge, n = n*2, increase the sample size
+        iteration = 0
+        prob = pd.DataFrame()
+        while var > tol and iteration < maxiter:
+            for sample_id in range(8):
+                seed = seed_init + sample_id* 20 + (iteration+1) # every iteration pick different seed
+                prob['sample{}'.format(seed)] = self.simulated_integral_one_sample(n, seed, delta, sigma_p, price)
+            
+            # update
+            iteration = iteration + 1
+            var = np.var(prob, axis = 1).sum()
+            if print_progress:
+                print('- n = {}, var = {}'.format(n,var))
+        
+        prob_hat = np.mean(prob, axis = 1)
+        return prob_hat
+
+    def simulated_integral_one_sample(self, n, seed, delta, sigma_p, price):
+        
+        v_sample = random_draw(n, seed)
+        riemann_sum = np.zeros(len(delta)) 
+
+        # calculate for each point:
+        for i in range(n):
+            v_ip = v_sample[i]
+            one_point = self.one_consumer_prob_on_each_prod(v_ip , delta, sigma_p, price)
+            
+            riemann_sum = one_point + riemann_sum
+        
+        # divided by 
+        riemann_sum = riemann_sum/n
+        return riemann_sum    
+
+
     
     # IV. visualize  ------------------------------------------------------
 
