@@ -388,23 +388,23 @@ class DiscreteChoice:
         df['mu'] = mu
         df['score'] = df['delta'] + df['mu']
 
-        #maxscore = np.max(df['score'])
-        #df['score'] = df['score'] - maxscore
+        maxscore = np.max(df['score'])
+        df['score'] = df['score'] - maxscore
         
         # 3. calculate a probability of chosing each product for each consumer, based on the score
         df['expscore'] = np.exp(df['score'])
         total_expscore = np.sum(df['expscore'])
-        df['prob'] = df['expscore']/ (1+ total_expscore)  # do not need to + 1, because we already have the outside option as an row
+        df['prob'] = df['expscore']/ (total_expscore)  # do not need to + 1, because we already have the outside option as an row
 
 
         # II. check and return values ---------------------------------------------------------------
         # check whether prob for each person sum up to 1
-        #total_prob = np.sum(df['prob'])
-        #tol = 10**(-10)
-        #if abs(total_prob -1) > tol:
-        #    self.problem_df = df
-        #    self.problem_total_prob = total_prob
-        #    print("probability does not sum up to 1 (or because of NaN/inf), return the dataframe to self.problem_df, self.problem_total_prob")
+        total_prob = np.sum(df['prob'])
+        tol = 10**(-10)
+        if abs(total_prob -1) > tol:
+            self.problem_df = df
+            self.problem_total_prob = total_prob
+            print("probability does not sum up to 1 (or because of NaN/inf), return the dataframe to self.problem_df, self.problem_total_prob")
         
         # make sure the output probability is in the order as the main dataframe
         probability = df['prob']
