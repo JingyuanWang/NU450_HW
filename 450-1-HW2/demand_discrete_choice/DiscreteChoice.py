@@ -301,13 +301,42 @@ class DiscreteChoice:
 
     # ------------------------------------------
     # function group 1: 
-    # given delta, get shares
+    # given delta, get shares, use build in integral
     # ------------------------------------------
-    
+    def products_social_ave_valuation_TO_market_share_OneMarket(self, market_id, delta, sigma_p, price, print_progress = False):
+        ''' A function predict the market share of each product 
+        using product social average valuation, delta, 
+        and parameters on consumers' tastes randomness on x, an observable product characteristics.
+        
+        Input:
+        --deltas is a series of product characterisctic: num_prod by 1. 
+        --sigma_p is a scalar, variance of random taste on price 
+        --price, str, price col name in df_input 
+        --self, self gives the products dataset, including all product attributes'''
+
+        df = self.products[self.products['market_id'] == market_id]
+
+        shares = np.zeros(len(df))
+        
+        # could write a simulation though, but since it's just 1 dim, use build-in integral function from scipyß
+        for i in range(len(shares)):
+            shares[i] = integrate.quad(lambda v:
+                self.one_consumer_prob_on_each_prod_withinmarket(market_id = market_id, 
+                	v_ip = v, delta = delta, sigma_p = sigma_p, 
+                	price = price).iloc[i] 
+                * stats.lognorm.pdf(v, s = 1), 
+                0, np.inf)[0]
+            
+            if print_progress:
+                if i % 10 == 0:
+                    print('complete simulating {}th element of the share'.format(i))
+
+        return shares
+
     def products_social_ave_valuation_TO_market_share_Slowbutaccurate(self, delta, sigma_p, price, print_progress = False):
         ''' A function predict the market share of each product 
         using product social average valuation, delta, 
-        and parameters on consumers' tastes randomness on x, an observable product character.
+        and parameters on consumers' tastes randomness on x, an observable product characteristics.
         
         Input:
         --deltas is a series of product characterisctic: num_prod by 1. 
@@ -322,11 +351,10 @@ class DiscreteChoice:
         # could write a simulation though, but since it's just 1 dim, use build-in integral function from scipyß
         for i in range(len(shares)):
             shares[i] = integrate.quad(lambda v:
-                self.one_consumer_prob_on_each_prod(v_ip = v, delta = delta, sigma_p = sigma_p, price = price)[i] * stats.lognorm.pdf(v, s = 1)
-                , 0, np.inf)[0]
-            
+                self.one_consumer_prob_on_each_prod(v_ip = v, delta = delta, sigma_p = sigma_p, price = price).iloc[i] * stats.lognorm.pdf(v, s = 1), 0, np.inf)[0]
+
             if print_progress:
-                if i % 20 == 0:
+                if i % 10 == 0:
                     print('complete simulating {}th element of the share'.format(i))
 
         return shares
@@ -346,6 +374,43 @@ class DiscreteChoice:
         # return a vector, length = i*j-by-1, same order as self.products
         return mu_ij
 
+    def one_consumer_prob_on_each_prod_withinmarket(self, market_id, v_ip , delta, sigma_p, price):
+        '''v_ip is 1-dim '''
+        #df = df_input.copy()
+        df = self.products[self.products['market_id'] == market_id]
+        
+        # I. calculate the probability --------------------------------------------------------------
+        # 1.calculate the random part:
+        mu = self.one_consumer_utility_driven_by_random_coeff(df, v_ip, sigma_p, price)
+
+        # 2.the score for each product
+        df['delta'] = delta
+        df['mu'] = mu
+        df['score'] = df['delta'] + df['mu']
+
+        #maxscore = np.max(df['score'])
+        #df['score'] = df['score'] - maxscore
+        
+        # 3. calculate a probability of chosing each product for each consumer, based on the score
+        df['expscore'] = np.exp(df['score'])
+        total_expscore = np.sum(df['expscore'])
+        df['prob'] = df['expscore']/ (1+ total_expscore)  # do not need to + 1, because we already have the outside option as an row
+
+
+        # II. check and return values ---------------------------------------------------------------
+        # check whether prob for each person sum up to 1
+        #total_prob = np.sum(df['prob'])
+        #tol = 10**(-10)
+        #if abs(total_prob -1) > tol:
+        #    self.problem_df = df
+        #    self.problem_total_prob = total_prob
+        #    print("probability does not sum up to 1 (or because of NaN/inf), return the dataframe to self.problem_df, self.problem_total_prob")
+        
+        # make sure the output probability is in the order as the main dataframe
+        probability = df['prob']
+
+        return probability
+
     def one_consumer_prob_on_each_prod(self, v_ip , delta, sigma_p, price):
         '''v_ip is 1-dim '''
         #df = df_input.copy()
@@ -354,7 +419,10 @@ class DiscreteChoice:
         # I. calculate the probability --------------------------------------------------------------
         # 1.calculate the random part:
         mu = self.one_consumer_utility_driven_by_random_coeff(df, v_ip, sigma_p, price)
-        
+        if np.isnan(mu).any():
+        	return {'mu':mu, 'v_ip':v_ip}
+            #raise Exception(" mu = nan ")
+
         # 2.the score for each product
         df['delta'] = delta
         df['mu'] = mu
@@ -366,8 +434,12 @@ class DiscreteChoice:
         #         equivalent to 
         #         score for each product - max score 
         maxscore = df.groupby('market_id').agg({'score':np.max}).rename(columns = {'score':'max_score'})
+        if len( maxscore[ np.isnan(maxscore['max_score']) ]  ) != 0:
+            raise Exception(" max score = nan ")
         df = pd.merge(df,maxscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
         df['score'] = df['score'] - df['max_score']
+        if len( df[ np.isnan(df['score']) ]  ) != 0:
+            raise Exception(" score = nan ")
         
         # 3. calculate a probability of chosing each product for each consumer, based on the score
         df['expscore'] = np.exp(df['score'])
@@ -391,9 +463,10 @@ class DiscreteChoice:
         return probability
 
     # -------------------------------------------
-    # function group 2: simulated integral
+    # function group 2: 
+    # given delta, get shares, simulated integral
     # -------------------------------------------
-    def products_social_ave_valuation_TO_market_share_simulated_integral(self, delta, sigma_p, price, n_init = 1000, seed_init = 13344, tol = 1e-1, print_progress = False):    
+    def products_social_ave_valuation_TO_market_share_SimulIntegral_testconverge(self, delta, sigma_p, price, n_init = 1000, seed_init = 13344, tol = 1e-1, print_progress = False):    
 
         var = 9999 # any big value could work
         n = n_init 
@@ -406,7 +479,7 @@ class DiscreteChoice:
         while var > tol and iteration < maxiter:
             for sample_id in range(8):
                 seed = seed_init + sample_id* 20 + (iteration+1) # every iteration pick different seed
-                prob['sample{}'.format(seed)] = self.simulated_integral_one_sample(n, seed, delta, sigma_p, price)
+                prob['sample{}'.format(seed)] = self.products_social_ave_valuation_TO_market_share_SimulIntegral(delta, sigma_p, price, n, seed)
             
             # update
             iteration = iteration + 1
@@ -417,7 +490,7 @@ class DiscreteChoice:
         prob_hat = np.mean(prob, axis = 1)
         return prob_hat
 
-    def simulated_integral_one_sample(self, n, seed, delta, sigma_p, price):
+    def products_social_ave_valuation_TO_market_share_SimulIntegral(self,  delta, sigma_p, price, n, seed):
         
         v_sample = random_draw(n, seed)
         riemann_sum = np.zeros(len(delta)) 
@@ -432,6 +505,7 @@ class DiscreteChoice:
         # divided by 
         riemann_sum = riemann_sum/n
         return riemann_sum    
+
 
 
     
