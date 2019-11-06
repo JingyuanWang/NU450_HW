@@ -48,7 +48,7 @@ class BLP_MPEC:
         -- DiscreteChoice, classed defined in the DiscreteChoice module in the same folder '''
         
         # get the data: only need the products attributes. In practise, we know nothing about the consumer.
-        self.products = DiscreteChoice.products
+        self.products = DiscreteChoice.products.sort_values(['market_id','product_id']) # must sorted this way
 
         # parameters
         self.num_of_market = DiscreteChoice.num_of_market
@@ -90,8 +90,53 @@ class BLP_MPEC:
 
     # ------------------------------------------
     # function group 1: 
-    # given delta, get shares, use build in integral
+    # generate exogeneous variables
     # ------------------------------------------
+    def construct_exogenous_var(self):
+
+        # save exogenous var names
+        self.exogeneous_var = ['x1', 'x2', 'x3']
+
+        # generate IV
+        self.gen_BLP_instruments()
+        self.gen_Hausman_instrument()
+
+
+        return
+    
+    def gen_BLP_instruments(self):
+
+        df = self.products
+
+        func1 = lambda series: pd.DataFrame({'rolling': np.roll(series.values, 1).tolist() })
+        func2 = lambda series: pd.DataFrame({'rolling': np.roll(series.values, 2).tolist() })    
+
+        df['x2_other1'] = df.groupby('market_id')['x2'].apply(func1).reset_index(drop = True)
+        df['x2_other2'] = df.groupby('market_id')['x2'].apply(func2).reset_index(drop = True)
+        df['x3_other1'] = df.groupby('market_id')['x3'].apply(func1).reset_index(drop = True)
+        df['x3_other2'] = df.groupby('market_id')['x3'].apply(func2).reset_index(drop = True)
+
+        # save
+        self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
+        self.exogeneous_var_BLPinstruments = ['x2_other1', 'x2_other2' , 'x3_other1' , 'x3_other2']
+
+        return 
+
+    def gen_Hausman_instrument(self):
+
+        df = self.products
+        num_of_market = self.num_of_market
+
+        p_sum = df.groupby('product_id').agg({'price': np.sum }).rename(columns = {'price': 'price_others'} )
+        df = pd.merge(df, p_sum, left_on = 'product_id', right_on = 'product_id')
+
+        df['price_others'] = (df['price_others'] - df['price']) / (num_of_market-1)
+
+        # save
+        self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
+        self.exogeneous_var_Hausmaninstruments = ['price_others']
+
+
 
 
     # III. Estimate --------------------------------------------------------------------
@@ -112,7 +157,7 @@ class BLP_MPEC:
         # 0. Prepare
         # take data of interest:
         df = self.products.copy()
-        df = df.sort_values(['market_id','product_id'])
+        df = df.sort_values(['market_id','product_id']).reset_index(drop = True)
         price = df[price_varname].values[:,np.newaxis]
         
         # set parameter
