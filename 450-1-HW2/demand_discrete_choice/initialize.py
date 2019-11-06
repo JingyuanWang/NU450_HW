@@ -17,7 +17,6 @@ import pandas as pd
 import os,sys,inspect
 import scipy.stats as stats
 import scipy.integrate as integrate
-import matplotlib.pyplot as plt
 import itertools as it
 import copy
 import importlib
@@ -65,19 +64,6 @@ def add_outside_option(df_product, product_ids):
     output.drop(columns = 'total_share', inplace = True)
     
     return output
-
-def random_draw(n, seed):
-    '''draw n v_ips randomly from N(0,1)
-    
-    Input:
-    --n, int, length of the output vector.
-    --seed, random seeed'''
-    np.random.seed(seed=seed)
-    
-    #v = np.random.normal(loc=0.0, scale=1.0, size=n)
-    v = np.random.lognormal(mean=0.0, sigma=1.0, size=n)
-    
-    return v
 
 
 # ---------------------------------------------------------------------------------
@@ -184,7 +170,10 @@ class DiscreteChoice:
     # give all the observables, unobservables, and true parameters
     # simulate choice, estimate consumer welfare, and firm profit
 
-    # Consumers:
+    # ------------------------------------------
+    # function group 1: 
+    # consumer choices
+    # ------------------------------------------
     def consumer_utility_ij(self, product_attribute_observed, product_attribute_unobs, price, taste, price_sensitivity, eps):
         '''utility function (matrix operation), input are variable names, output is a vector '''
         df = self.consumer_product
@@ -265,7 +254,10 @@ class DiscreteChoice:
         print('Total welfare = {}'.format(total_welfare))
 
 
-    # Firm:
+    # ------------------------------------------
+    # function group 1: 
+    # Firms
+    # ------------------------------------------
     def firm_marginal_cost(self, cost_attribute_observed, cost_input_coeff, error_term):
         '''simulate firm's margianl cost'''
         df = self.products 
@@ -293,8 +285,15 @@ class DiscreteChoice:
         print(total_profit)
 
 
-    # III. Estimate --------------------------------------------------------------------
+    # III. Generate Variables --------------------------------------------------------------------
 
+    # ------------------------------------------
+    # function group 1: 
+    # given delta, get shares, use build in integral
+    # ------------------------------------------
+
+
+    # III. Estimate --------------------------------------------------------------------
     # ------------------------------------------
     # function group 1: 
     # given delta, get shares, use build in integral
@@ -320,8 +319,7 @@ class DiscreteChoice:
         market_cluster = np.kron(np.eye(num_of_market), one_markect)
         # save
         self.MEPC_par_market_block_matrix = market_cluster
-
-
+        return 
 
     def products_social_ave_valuation_TO_market_share(self, delta, sigma_p , price_varname, for_gradiant = False, worried_about_inf = False):
         '''A function calculate market share using given (product social value) delta, using simulated integral 
@@ -399,7 +397,12 @@ class DiscreteChoice:
 
     # ------------------------------------------
     # function group 3: 
-    # Jacobian
+    # gradient for objective function
+    # ------------------------------------------
+
+    # ------------------------------------------
+    # function group 4: 
+    # gradient for constraint
     # ------------------------------------------
     def gradiant_share(self, delta, sigma_p , price_varname):
         '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
@@ -420,7 +423,7 @@ class DiscreteChoice:
         
         gradiant = np.vstack((derivatives_firstJMrows, derivatives_laterrows))
 
-        return {'1':derivatives_firstJMrows, '2':derivatives_laterrows} 
+        return gradiant
 
     def gradiant_share_on_social_ave_valuation(self, share_all):
         '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
@@ -486,7 +489,9 @@ class DiscreteChoice:
         return derivative
 
 
-
+    def gradiant_moments(self):
+        '''gradiant for moment constraints '''
+        return
 
 
 
