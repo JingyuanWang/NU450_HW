@@ -3,20 +3,12 @@
 # NOTE
 # ------------------------------------------------------------------------
 # Purpose:
-# define class: Discrete Choice, with method:
-#     1. choice_probability(I,X,beta)
-#     2. loglikelihood(Y,I,X,beta)
-#     3. ...
+# define class: Discrete Choice
 #
-# Definition of several variables in this file:
-# data:
-#   i: index of consumer
-#   I: total number of consumers
-#   j: number of products
-#   J: total number of products
-# reg:
-#   k: length of beta = length of product attributes (no constant)
-#   q: length of IV+exogenous RHS vars = moment conditions 
+# REASON for archive:
+#    will vectorise the simulated integral 
+#      (make each draw a column of a matrix, this will gives a large matrix but will be super fast by avoiding for loops)
+#    keep this version because later on maybe I'll need a function for simulated integral
 # ------------------------------------------------------------------------
 '''
 
@@ -377,8 +369,9 @@ class DiscreteChoice:
     def one_consumer_prob_on_each_prod_withinmarket(self, market_id, v_ip , delta, sigma_p, price):
         '''v_ip is 1-dim '''
         #df = df_input.copy()
-        df = self.products[self.products['market_id'] == market_id]
-        
+        sample = self.products[self.products['market_id'] == market_id]
+        df = sample.copy()
+
         # I. calculate the probability --------------------------------------------------------------
         # 1.calculate the random part:
         mu = self.one_consumer_utility_driven_by_random_coeff(df, v_ip, sigma_p, price)
@@ -390,11 +383,12 @@ class DiscreteChoice:
 
         maxscore = np.max(df['score'])
         df['score'] = df['score'] - maxscore
+        outside_option = np.exp(- maxscore)
         
         # 3. calculate a probability of chosing each product for each consumer, based on the score
         df['expscore'] = np.exp(df['score'])
         total_expscore = np.sum(df['expscore'])
-        df['prob'] = df['expscore']/ (1 + total_expscore)  
+        df['prob'] = df['expscore']/ (outside_option + total_expscore)  
 
         # II. check and return values ---------------------------------------------------------------
         # check whether prob for each person sum up to 1
@@ -435,12 +429,13 @@ class DiscreteChoice:
         maxscore = df.groupby('market_id').agg({'score':np.max}).rename(columns = {'score':'max_score'})
         df = pd.merge(df,maxscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
         df['score'] = df['score'] - df['max_score']
+        df['outside_option'] = np.exp(- df['max_score'])
         
         # 3. calculate a probability of chosing each product for each consumer, based on the score
         df['expscore'] = np.exp(df['score'])
         total_expscore = df.groupby('market_id').agg({'expscore': np.sum}).rename(columns = {'expscore':'total_expscore'})
         df = pd.merge(df, total_expscore, how = 'left', left_on = 'market_id', right_on = 'market_id')
-        df['prob'] = df['expscore']/ (1 + df['total_expscore'])  # do not need to + 1, because we already have the outside option as an row
+        df['prob'] = df['expscore']/ (df['outside_option'] + df['total_expscore'])  # do not need to + 1, because we already have the outside option as an row
 
 
         # II. check and return values ---------------------------------------------------------------
@@ -461,29 +456,6 @@ class DiscreteChoice:
     # function group 2: 
     # given delta, get shares, simulated integral
     # -------------------------------------------
-    def products_social_ave_valuation_TO_market_share_SimulIntegral_testconverge(self, delta, sigma_p, price, n_init = 1000, seed_init = 13344, tol = 1e-1, print_progress = False):    
-
-        var = 9999 # any big value could work
-        n = n_init 
-        maxiter = 5 # must < 20, or change sample_id * 20
-        
-        # calculate the simulated integral 8 times using 8 seeds, it should converge: var <= tol
-        # if not converge, n = n*2, increase the sample size
-        iteration = 0
-        prob = pd.DataFrame()
-        while var > tol and iteration < maxiter:
-            for sample_id in range(8):
-                seed = seed_init + sample_id* 20 + (iteration+1) # every iteration pick different seed
-                prob['sample{}'.format(seed)] = self.products_social_ave_valuation_TO_market_share_SimulIntegral(delta, sigma_p, price, n, seed)
-            
-            # update
-            iteration = iteration + 1
-            var = np.var(prob, axis = 1).sum()
-            if print_progress:
-                print('- n = {}, var = {}'.format(n,var))
-        
-        prob_hat = np.mean(prob, axis = 1)
-        return prob_hat
 
     def products_social_ave_valuation_TO_market_share_SimulIntegral(self,  delta, sigma_p, price, n, seed):
         
@@ -502,9 +474,6 @@ class DiscreteChoice:
         return riemann_sum    
 
 
-
-    
-    # IV. visualize  ------------------------------------------------------
 
 
 
