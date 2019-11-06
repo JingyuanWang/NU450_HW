@@ -299,7 +299,31 @@ class DiscreteChoice:
     # function group 1: 
     # given delta, get shares, use build in integral
     # ------------------------------------------
-    def products_social_ave_valuation_TO_market_share(self, delta, sigma_p , price, worried_about_inf = False, n_sample = 5000):
+    def prepare_for_MEPC(self, n_sample = 5000):
+        '''Prepare  for MEPC:
+        1. draw random sample
+        2. save a matrix of 0s and 1s  '''
+
+        # 1. get parameters 
+        num_of_market = self.num_of_market
+        num_of_prod = self.num_of_prod
+
+
+        # 2. Randomly draw a sample of random taste
+        v = np.random.lognormal(0, 1, (1, n_sample) )
+        # save
+        self.MEPC_par_n_sample = n_sample
+        self.MPEC_par_sample_v = v
+
+        # 3. construct a matrix (of 1s and 0s) with cluster diagnals 
+        one_markect = np.ones((num_of_prod,num_of_prod))
+        market_cluster = np.kron(np.eye(num_of_market), one_markect)
+        # save
+        self.MEPC_par_market_block_matrix = market_cluster
+
+
+
+    def products_social_ave_valuation_TO_market_share(self, delta, sigma_p , price_varname, for_gradiant = False, worried_about_inf = False):
         '''A function calculate market share using given (product social value) delta, using simulated integral 
         
         Input:
@@ -310,18 +334,18 @@ class DiscreteChoice:
         # take data of interest:
         df = self.products.copy()
         df = df.sort_values(['market_id','product_id'])
-        price = df[price].values[:,np.newaxis]
-
+        price = df[price_varname].values[:,np.newaxis]
+        
         # set parameter
         num_of_market = self.num_of_market
         num_of_prod = self.num_of_prod
+        n_sample = self.MEPC_par_n_sample
 
-        # construct a matrix (of 1s and 0s) with cluster diagnals 
-        one_markect = np.ones((num_of_prod,num_of_prod))
-        market_cluster = np.kron(np.eye(num_of_market), one_markect)
+        # the matrix (of 1s and 0s) with cluster diagnals 
+        market_cluster = self.MEPC_par_market_block_matrix
 
         # 1. Randomly draw a sample of random taste
-        v = np.random.lognormal(0, 1, (1, n_sample) )
+        v = self.MPEC_par_sample_v
         v_all = np.repeat(v, num_of_market*num_of_prod, axis = 0) # to vectorize the simulation
 
         # 2. Calculate Each Consumer's Preference
@@ -329,14 +353,14 @@ class DiscreteChoice:
         delta_all = np.repeat(delta, n_sample, axis = 1)
 
         # --2 random taste
-        random_taste = - price * v_all
+        random_taste = - price * v_all * sigma_p
 
         # --3 score on each product
         score_all = np.exp(random_taste) * np.exp(delta) 
 
         # --4 probability of chosing each product
-        total_score = (market_cluster@score_all) 
-        share_all = score_all / (total_score + 1)
+        total_score_all = (market_cluster@score_all) 
+        share_all = score_all / (total_score_all + 1)
 
         if worried_about_inf:
             score_all = random_taste + delta
@@ -355,14 +379,113 @@ class DiscreteChoice:
             outside = np.exp(outside)
             
             # --4 probability of chosing each product
-            total_score = (market_cluster@score_all) 
-            share_all = score_all / (total_score + outside)
+            total_score_all = (market_cluster@score_all) 
+            share_all = score_all / (total_score_all + outside)
 
-        # 3. average across all simulated values
+        if for_gradiant:
+            # return a matrix of num_of_market*num_of_prod by number_of_consumers, about 300 -by- 5000
+            return {'share_all': share_all, 'price' : price}
+        else:
+            # 3. Integral: average across all simulated values
+            shares = (np.sum(share_all, axis = 1) / n_sample)
+            shares = shares[:,np.newaxis]
+            return shares
+
+
+    # ------------------------------------------
+    # function group 2: 
+    # objective functions and constrains
+    # ------------------------------------------
+
+    # ------------------------------------------
+    # function group 3: 
+    # Jacobian
+    # ------------------------------------------
+    def gradiant_share(self, delta, sigma_p , price_varname):
+        '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
+
+        Output:
+        -- derivatives, (JM+1) -by- JM. 
+                        each column is the derivative of one constraint on 
+                               -- JM deltas (social average valuation on each product-market);
+                               -- 1 sigma (taste randomness)
+        '''
+        interim_integral_results = self.products_social_ave_valuation_TO_market_share(delta, sigma_p , price_varname, for_gradiant = True)
+        share_all = interim_integral_results['share_all']
+        price     = interim_integral_results['price']
+
+        derivatives_firstJMrows = self.gradiant_share_on_social_ave_valuation(share_all)
+
+        derivatives_laterrows = self.gradiant_share_on_taste_randomness(share_all,price)
+        
+        gradiant = np.vstack((derivatives_firstJMrows, derivatives_laterrows))
+
+        return {'1':derivatives_firstJMrows, '2':derivatives_laterrows} 
+
+    def gradiant_share_on_social_ave_valuation(self, share_all):
+        '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
+        Partially on deltas (social average valuation)
+
+        Output:
+        -- derivatives, JM -by- JM. each column is the derivative of one constraint on JM deltas (social average valuation on each product-market).
+        '''
+
+        # the matrix (of 1s and 0s) with cluster diagnals 
+        market_cluster = self.MEPC_par_market_block_matrix
+        n_sample = self.MEPC_par_n_sample
+
+        # derivatives
+        derivatives = - share_all@share_all.T / n_sample
+        # @ product did the Integral!
+
+        derivatives = derivatives * market_cluster
+        # off diagnal blocks = 0
+
+        # adjust for the diagnals
         shares = (np.sum(share_all, axis = 1) / n_sample)
+        shares_1dim = np.squeeze(shares) # num_of_prod * num_of_market - by - 1 , to num_of_prod * num_of_market - by - 0
+        derivatives_diagnal = np.diag(shares_1dim)  # num_of_prod * num_of_market - by - num_of_prod * num_of_market
+        derivatives = derivatives_diagnal + derivatives
+        
+        return derivatives
+
+    def gradiant_share_on_taste_randomness(self, share_all, price):
+        '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
 
 
-        return shares
+        Output:
+        -- derivatives, 1 -by- JM. each column is the derivative of one constraint on sigma (taste randomness).
+        '''
+
+        # 1. GET DATA AND PARAMETERS
+        # the matrix (of 1s and 0s) with cluster diagnals 
+        market_cluster = self.MEPC_par_market_block_matrix
+        n_sample = self.MEPC_par_n_sample
+        num_of_market = self.num_of_market
+        num_of_prod = self.num_of_prod
+        
+        # the random sample
+        v = self.MPEC_par_sample_v
+        v_all = np.repeat(v, num_of_market*num_of_prod, axis = 0) # to vectorize the simulation
+
+        # derivative of the numerator 
+        derivative_numerator_all =  share_all * price * v_all
+
+        # derivative of the denominator
+        partial_all = share_all * price * v_all
+        partial_sum_all = (market_cluster@partial_all) 
+        derivative_denominator_all = - share_all * partial_sum_all
+
+        # derivative
+        derivative_all = derivative_numerator_all + derivative_denominator_all
+        derivative = (np.sum(derivative_all, axis = 1) / n_sample)
+        
+        # each row stands for 1 parameter; each columns stands for 1 constraint.
+        derivative = derivative[np.newaxis,:]
+
+        return derivative
+
+
 
 
 
