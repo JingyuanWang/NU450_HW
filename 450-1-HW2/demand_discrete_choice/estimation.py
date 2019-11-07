@@ -103,13 +103,6 @@ class BLP_MPEC:
         self.gen_Hausman_instrument()
 
         return
-
-    def construct_true_var(self):
-
-        # save true parameters
-        df = self.products.sort_values(['market_id','product_id']).reset_index(drop = True)
-        self.MPEC_par_true_share = df['shares'].values[:,np.newaxis]
-
     
     def gen_BLP_instruments(self):
 
@@ -151,12 +144,28 @@ class BLP_MPEC:
 
     # III. Estimate --------------------------------------------------------------------
 
+    def MPEC_claim_var(self, independent_var, exogenous_var):
+        
+        df = self.products.sort_values(['market_id','product_id']).reset_index(drop =True)
+
+        self.MPEC_X = df[independent_var].values
+        self.MPEC_Z = df[exogenous_var].values
+        self.MPEC_W = np.eye(Z.shape[1])
+        (self.JM, self.q) = Z.shape 
+
+        # save true parameters
+        self.MPEC_par_true_share = df['shares'].values[:,np.newaxis]
+
+        # specify variable name
+        self.varname_randomcoeff = 'price'
+
+        return 
+    
     # ------------------------------------------
     # function group 1: 
     # 1. given delta, get shares, use build in integral
     # 2. given shares, back out delta: contraction mapping using 1
     # ------------------------------------------
-
     def products_social_ave_valuation_TO_market_share(self, delta, sigma_p , price_varname, for_gradiant = False, worried_about_inf = False):
         '''A function calculate market share using given (product social value) delta, using simulated integral 
         
@@ -225,16 +234,16 @@ class BLP_MPEC:
             shares = shares[:,np.newaxis]
             return shares
 
-
     # ------------------------------------------
     # function group 2: 
     # objective functions and constrains
     # ------------------------------------------
     
-    def MPEC_obj(self, parameter, X, Z, W):
+    def MPEC_obj(self, parameter):
         '''  '''
         
-        (JM,q) = Z.shape    
+        JM = self.JM
+        q =self.q
 
         if len(parameter) != (JM + q + 1) :
             raise Exception('len(parameter) != (JM + q + 1)')
@@ -243,13 +252,18 @@ class BLP_MPEC:
         sigma = parameter[JM]     # scalar
         eta = parameter[-q:]     # k*1
         
+        W = self.MPEC_W
         obj = eta.T@W@eta
         
         return obj
 
-    def MPEC_constraint(self, parameter, X, Z, W):
+    def MPEC_constraint(self, parameter):
         
-        (JM,q) = Z.shape    
+        JM = self.JM
+        q =self.q
+        X = self.MPEC_X
+        Z = self.MPEC_Z
+        W = self.MPEC_W    
 
         delta = parameter[0:JM]  # JM*1
         sigma = parameter[JM]     # scalar
@@ -265,17 +279,19 @@ class BLP_MPEC:
         
         return g - eta
 
-    def MPEC_constraint_share(self, parameter, Z):
+    def MPEC_constraint_share(self, parameter):
 
         shares = self.MPEC_par_true_share
+        price_varname = self.varname_randomcoeff
 
-        (JM,q) = Z.shape
+        JM = self.JM
+        q =self.q
 
         delta = parameter[0:JM]  # JM*1
         sigma = parameter[JM]     # scalar
         eta = parameter[-q:]     # k*1
         
-        shares_hat = self.products_social_ave_valuation_TO_market_share(delta = delta, sigma_p=sigma, price_varname = 'price', 
+        shares_hat = self.products_social_ave_valuation_TO_market_share(delta = delta, sigma_p=sigma, price_varname = price_varname, 
                                                                                    worried_about_inf = False)
         return  shares_hat - shares
 
@@ -283,9 +299,25 @@ class BLP_MPEC:
     # function group 3: 
     # gradient for objective function
     # ------------------------------------------
+    def MPEC_gradiant_obj(self, parameter):
+
+        JM = self.JM
+        q =self.q
+        W = self.MPEC_W
+        Z = self.MPEC_Z
+
+        gradient_obj_on_delta_sigma = np.zeros( (JM+1,1) )
+
+        gradient_obj_on_eta = self.gradiant_obj(parameter, W, Z)
+
+        gradient = np.vstack( (gradient_obj_on_delta_sigma, gradient_obj_on_eta) )
+
+        return gradient
+
     def gradiant_obj(self, parameter, W, Z):
 
-        (JM,q) = Z.shape
+        JM = self.JM
+        q =self.q
         
         delta = parameter[0:JM]  # JM*1
         sigma = parameter[JM]     # scalar
@@ -298,9 +330,14 @@ class BLP_MPEC:
     # gradient for constraint
     # ------------------------------------------
 
-    def MPEC_gradiant(self, parameter, price_varname, X,Z,W):
+    def MPEC_gradiant_constraints(self, parameter):
 
-        (JM,q) = Z.shape
+        JM = self.JM
+        q =self.q
+        X = self.MPEC_X
+        W = self.MPEC_W
+        Z = self.MPEC_Z
+        price_varname  = self.varname_randomcoeff
 
         cluster_11_share_on_delta_sigma = self.gradiant_share(parameter, price_varname, Z)
         cluster_121_mc_on_delta = self.gradiant_moment_conditions(parameter, X, Z, W)
@@ -316,7 +353,6 @@ class BLP_MPEC:
         gradient = np.vstack( (cluster_1_on_delta_sigma, cluster_2_on_eta) )
 
         return gradient
-
 
     def gradiant_share(self, parameter, price_varname, Z):
         '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
@@ -407,7 +443,6 @@ class BLP_MPEC:
         derivative = derivative[np.newaxis,:]
 
         return derivative
-
 
     def gradiant_moment_conditions(self, parameter, X, Z, W):
         '''gradiant for moment constraints '''
