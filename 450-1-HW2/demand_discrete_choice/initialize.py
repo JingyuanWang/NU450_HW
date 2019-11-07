@@ -21,12 +21,6 @@ import itertools as it
 import copy
 import importlib
 
-# mine
-directory = '/Users/jingyuanwang/GitHub/NU450_HW'
-if directory not in sys.path:
-    sys.path.insert(0,directory)  
-import myfunctions as mf
-importlib.reload(mf)
 
 # random seed
 np.random.seed(seed=13344)
