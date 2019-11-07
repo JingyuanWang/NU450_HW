@@ -150,8 +150,8 @@ class BLP_MPEC:
 
         self.MPEC_X = df[independent_var].values
         self.MPEC_Z = df[exogenous_var].values
-        self.MPEC_W = np.eye(Z.shape[1])
-        (self.JM, self.q) = Z.shape 
+        self.MPEC_W = np.eye(self.MPEC_Z.shape[1])
+        (self.JM, self.q) = self.MPEC_Z.shape 
 
         # save true parameters
         self.MPEC_par_true_share = df['shares'].values[:,np.newaxis]
