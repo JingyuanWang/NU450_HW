@@ -85,6 +85,7 @@ class BLP_MPEC:
         # save
         self.MEPC_par_market_block_matrix = market_cluster
 
+        return
 
     # III. Generate Variables --------------------------------------------------------------------
 
@@ -101,8 +102,14 @@ class BLP_MPEC:
         self.gen_BLP_instruments()
         self.gen_Hausman_instrument()
 
-
         return
+
+    def construct_true_var(self):
+
+        # save true parameters
+        df = self.products.sort_values(['market_id','product_id']).reset_index(drop = True)
+        self.MPEC_par_true_share = df['shares'].values[:,np.newaxis]
+
     
     def gen_BLP_instruments(self):
 
@@ -131,13 +138,16 @@ class BLP_MPEC:
         df = pd.merge(df, p_sum, left_on = 'product_id', right_on = 'product_id')
 
         df['price_others'] = (df['price_others'] - df['price']) / (num_of_market-1)
+        df['price_others_sq'] = df['price_others']**2
 
         # save
         self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
-        self.exogeneous_var_Hausmaninstruments = ['price_others']
+        self.exogeneous_var_Hausmaninstruments = ['price_others', 'price_others_sq']
 
 
-
+    def first_stage(self, exogeneous_varname, endogenous_varname, IV_varname):
+        ### 
+        return
 
     # III. Estimate --------------------------------------------------------------------
 
@@ -220,17 +230,95 @@ class BLP_MPEC:
     # function group 2: 
     # objective functions and constrains
     # ------------------------------------------
+    
+    def MPEC_obj(self, parameter, X, Z, W):
+        '''  '''
+        
+        (JM,q) = Z.shape    
+
+        if len(parameter) != (JM + q + 1) :
+            raise Exception('len(parameter) != (JM + q + 1)')
+
+        delta = parameter[0:JM]  # JM*1
+        sigma = parameter[JM]     # scalar
+        eta = parameter[-q:]     # k*1
+        
+        obj = eta.T@W@eta
+        
+        return obj
+
+    def MPEC_constraint(self, parameter, X, Z, W):
+        
+        (JM,q) = Z.shape    
+
+        delta = parameter[0:JM]  # JM*1
+        sigma = parameter[JM]     # scalar
+        eta = parameter[-q:]     # k*1
+        
+        if Z.shape[1] == X.shape[1]:
+            raise Exception('dim(Z) < #ofpar, not identified')
+        else:
+            Pz = Z@np.linalg.inv(Z.T@Z)@Z.T
+            Mxz = np.eye(JM) - X@np.linalg.inv(X.T@Pz@X)@X.T@Pz
+        
+        g = Z.T@(Mxz@delta)
+        
+        return g - eta
+
+    def MPEC_constraint_share(self, parameter, Z):
+
+        shares = self.MPEC_par_true_share
+
+        (JM,q) = Z.shape
+
+        delta = parameter[0:JM]  # JM*1
+        sigma = parameter[JM]     # scalar
+        eta = parameter[-q:]     # k*1
+        
+        shares_hat = self.products_social_ave_valuation_TO_market_share(delta = delta, sigma_p=sigma, price_varname = 'price', 
+                                                                                   worried_about_inf = False)
+        return  shares_hat - shares
 
     # ------------------------------------------
     # function group 3: 
     # gradient for objective function
     # ------------------------------------------
+    def gradiant_obj(self, parameter, W, Z):
+
+        (JM,q) = Z.shape
+        
+        delta = parameter[0:JM]  # JM*1
+        sigma = parameter[JM]     # scalar
+        eta = parameter[-q:]     # k*1
+
+        return 2 * W@eta
 
     # ------------------------------------------
     # function group 4: 
     # gradient for constraint
     # ------------------------------------------
-    def gradiant_share(self, delta, sigma_p , price_varname):
+
+    def MPEC_gradiant(self, parameter, price_varname, X,Z,W):
+
+        (JM,q) = Z.shape
+
+        cluster_11_share_on_delta_sigma = self.gradiant_share(parameter, price_varname, Z)
+        cluster_121_mc_on_delta = self.gradiant_moment_conditions(parameter, X, Z, W)
+        cluster_122_mc_on_sigma = np.zeros( (1,q))
+
+        cluster_21_share_on_eta =  np.zeros( (q,JM) )
+        cluster_22_mc_on_eta = -np.diag(np.ones(q))
+
+        # stack
+        cluster_12_mc_on_delta_sigma = np.vstack( (cluster_121_mc_on_delta, cluster_122_mc_on_sigma) )
+        cluster_1_on_delta_sigma = np.hstack( (cluster_11_share_on_delta_sigma, cluster_12_mc_on_delta_sigma) )
+        cluster_2_on_eta = np.hstack( (cluster_21_share_on_eta, cluster_22_mc_on_eta) )
+        gradient = np.vstack( (cluster_1_on_delta_sigma, cluster_2_on_eta) )
+
+        return gradient
+
+
+    def gradiant_share(self, parameter, price_varname, Z):
         '''derivatives of the share function (a set of constraints, num_of_prod * num_of_market, denoted JM) 
 
         Output:
@@ -239,7 +327,13 @@ class BLP_MPEC:
                                -- JM deltas (social average valuation on each product-market);
                                -- 1 sigma (taste randomness)
         '''
-        interim_integral_results = self.products_social_ave_valuation_TO_market_share(delta, sigma_p , price_varname, for_gradiant = True)
+        (JM,q) = Z.shape
+
+        delta = parameter[0:JM]   # JM*1
+        sigma = parameter[JM]     # scalar
+        eta = parameter[-q:]      # k*1
+
+        interim_integral_results = self.products_social_ave_valuation_TO_market_share(delta, sigma , price_varname, for_gradiant = True)
         share_all = interim_integral_results['share_all']
         price     = interim_integral_results['price']
 
@@ -315,9 +409,31 @@ class BLP_MPEC:
         return derivative
 
 
-    def gradiant_moments(self):
+    def gradiant_moment_conditions(self, parameter, X, Z, W):
         '''gradiant for moment constraints '''
-        return
+        
+
+        (JM,q) = Z.shape    
+
+        delta = parameter[0:JM]  # JM*1
+        sigma = parameter[JM]     # scalar
+        eta = parameter[-q:]     # k*1
+        
+        if Z.shape[1] == X.shape[1]:
+            raise Exception('dim(Z) < #ofpar, not identified')
+        else:
+            Pz = Z@np.linalg.inv(Z.T@Z)@Z.T
+            Mxz = np.eye(JM) - X@np.linalg.inv(X.T@Pz@X)@X.T@Pz
+
+        derivative = Mxz.T@Z
+
+        return derivative
+
+    # ------------------------------------------
+    # function group 4: 
+    # gradient for constraint
+    # ------------------------------------------
+
 
 
 
