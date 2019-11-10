@@ -41,14 +41,14 @@ class BLP_MPEC:
        -- estimation '''
 
     # get the main dataframe (and get the set of variables)
-    def __init__(self, DiscreteChoice, true_parameters = None):
+    def __init__(self, DiscreteChoice, true_parameters = None, update = False):
         '''initialize a dataclass for discrete demand system analysis
         
         Input:
-        -- DiscreteChoice, classed defined in the DiscreteChoice module in the same folder '''
+        -- DiscreteChoice, classed defined in DiscreteChoice module in the same folder '''
         
         # get the data: only need the products attributes. In practise, we know nothing about the consumer.
-        self.products = DiscreteChoice.products.sort_values(['market_id','product_id']) # must sorted this way
+        self.products = DiscreteChoice.products.sort_values(['market_id','product_id']) # must sorted in this way
 
         # parameters
         self.num_of_market = DiscreteChoice.num_of_market
@@ -57,16 +57,16 @@ class BLP_MPEC:
         # prepare for MPEC estimation
         self.true_parameters = true_parameters
         self.prepare_for_MEPC()
-        self.true_values()
+        self.true_values( update = update)
 
     # I. basic functions ----------------------------------------------------
 
     def prepare_for_MEPC(self, n_sample = 5000):
         '''Prepare  for MEPC:
-        1. save dimension
-        2. draw random sample
-        3. save a matrix of 0s and 1s 
-        4. save a vector of market shares
+        1. save dimension: number of market M, number of product J, JM
+        2. draw random sample (for simulated integral)
+        3. save a matrix of 0s and 1s (to be a "cookie cutter" for some matrix operation)
+        4. save a vector of market shares (to enter the constrain of MPEC)
 
         Input:
         -- n_sample: number of draws in the simulated integral part.
@@ -91,39 +91,41 @@ class BLP_MPEC:
         self.MEPC_par_market_block_matrix = market_cluster
         self.JM = num_of_market * num_of_prod
 
-        # save true parameters
-        self.MPEC_par_true_share = df['shares'].values[:,np.newaxis]
-
-         # specify variable name
+        # specify variable name
         self.varname_randomcoeff = 'price'
 
         return
 
 
-    def true_values(self):
+    def true_values(self, update = True):
+        ''' If true delta is given, check whether the true delta and the true share matches.
+        If not, replace the true share with simulated share (function of true delta).'''
 
         df = self.products.sort_values(['market_id','product_id']).reset_index(drop = True)
         true_parameters = self.true_parameters
-
+        
+        # True variables
+        # 1. Delta
         product_attribute_observed = ['x1','x2','x3']
         product_attribute_unobs = 'xi'
         price = 'price'
-        
-        # True variables
+
         delta_true = (df['xi'] + df[product_attribute_observed].values@true_parameters['beta'] \
               - df[price]*true_parameters['alpha_0']).values
 
         delta_true = delta_true[:, np.newaxis]
 
-        price = self.varname_randomcoeff
-        share_true = self.products_social_ave_valuation_TO_market_share(delta = delta_true, sigma_p=1 , price_varname = price)
+        # 2. Share
+        if update:
+            price = self.varname_randomcoeff
+            share_true = self.products_social_ave_valuation_TO_market_share(delta = delta_true, sigma_p=1 , price_varname = price)
+        else:
+            share_true = self.MPEC_par_true_share = df['shares'].values[:,np.newaxis]
         
         # save
         self.MPEC_par_true_delta = delta_true
         self.MPEC_par_true_share = share_true
         return 
-
-
 
     # III. Generate Variables --------------------------------------------------------------------
 
@@ -131,20 +133,52 @@ class BLP_MPEC:
     # function group 1: 
     # generate exogeneous variables
     # ------------------------------------------
-    def construct_exogenous_var(self):
+    def construct_exogenous_var(self, first_stage_check = False, exogeneous_varname = None, endogenous_varname = None):
+        '''Claim exogenous and endogenous varaibles
+        Construct all potential IVs, do first stage test
+
+        Note: 
+        1. all input must be list (could be list of 1 element)
+        2. exogeneous_varname and endogenous_varname can not be NONE if first_stage_check = True'''
 
         # save exogenous var names
-        self.exogeneous_var = ['x1', 'x2', 'x3']
+        #self.exogeneous_var = exogeneous_varname
 
         # generate IV
         self.gen_BLP_instruments()
         self.gen_Hausman_instrument()
 
+        # check first stage for the IVs
+        if first_stage_check:
+            # check BLP instrument
+            var = self.exogeneous_var_BLPinstruments 
+            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+            
+            # check hausman instrument
+            var = self.exogeneous_var_Hausmaninstruments
+            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+
+            # check both
+            # (1) all variables
+            var = self.exogeneous_var_BLPinstruments + self.exogeneous_var_Hausmaninstruments
+            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+
+            # (2) just 1 hausman instruments
+            var = self.exogeneous_var_BLPinstruments + [self.exogeneous_var_Hausmaninstruments[0]]
+            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+
         return
     
     def gen_BLP_instruments(self):
+        ''' generate hauseman instrument
+        Output:
+        -- save the variable in self.products data frame
+        -- save the varaible names in self.exogeneous_var_BLPinstruments '''
 
-        df = self.products
+        output_varnames = ['x2_other1', 'x2_other2' , 'x3_other1' , 'x3_other2']
+
+        df = self.products.copy()
+        df.drop(columns = output_varnames, errors = 'ignore', inplace = True)
 
         func1 = lambda series: pd.DataFrame({'rolling': np.roll(series.values, 1).tolist() })
         func2 = lambda series: pd.DataFrame({'rolling': np.roll(series.values, 2).tolist() })    
@@ -156,13 +190,19 @@ class BLP_MPEC:
 
         # save
         self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
-        self.exogeneous_var_BLPinstruments = ['x2_other1', 'x2_other2' , 'x3_other1' , 'x3_other2']
+        self.exogeneous_var_BLPinstruments = output_varnames
 
         return 
 
     def gen_Hausman_instrument(self):
+        ''' generate hauseman instrument
+        Output:
+        -- save the variable in self.products data frame
+        -- save the varaible names in self.exogeneous_var_Hausmaninstruments '''
+        output_varnames = ['price_others', 'price_others_sq']
 
-        df = self.products
+        df = self.products.copy()
+        df.drop(columns = output_varnames, errors = 'ignore', inplace = True)
         num_of_market = self.num_of_market
 
         p_sum = df.groupby('product_id').agg({'price': np.sum }).rename(columns = {'price': 'price_others'} )
@@ -173,10 +213,46 @@ class BLP_MPEC:
 
         # save
         self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
-        self.exogeneous_var_Hausmaninstruments = ['price_others', 'price_others_sq']
+        self.exogeneous_var_Hausmaninstruments = output_varnames
 
     def first_stage(self, exogeneous_varname, endogenous_varname, IV_varname):
-        ### 
+        '''Check the first stage for IVs 
+        All input must be lists '''
+
+        import econtools 
+        import econtools.metrics as mt
+
+        # get data
+        df = self.products.copy()
+        x_varnames = exogeneous_varname + IV_varname
+        
+        # first stage reg
+        # 1. partial out x:
+        for y_varname in endogenous_varname:
+            result = mt.reg(df, y_varname, exogeneous_varname)
+            df['{}_ddot'.format(y_varname)] = df[y_varname] - df[exogeneous_varname].values@result.beta
+
+        IV_varname_ddot = []
+        for iv_varname in IV_varname:
+            result = mt.reg(df, iv_varname, exogeneous_varname)
+            df['{}_ddot'.format(iv_varname)] = df[iv_varname] - df[exogeneous_varname].values@result.beta
+            IV_varname_ddot = IV_varname_ddot + ['{}_ddot'.format(iv_varname)]
+
+        # 2. First stage regression
+        for y_varname in endogenous_varname:
+
+            result = mt.reg(df, '{}_ddot'.format(y_varname), IV_varname_ddot)
+
+            print('#=======================================================')
+            print('Endogenous var: {} '.format(y_varname))
+            print('            IV: {} '.format(IV_varname))
+            print(' ')
+            print('F = {}'.format(result.F))
+            print(' ')
+            print('regression:')
+            print(result)
+            print(' ')
+
         return
 
 
