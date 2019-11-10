@@ -112,10 +112,10 @@ demand_m100_prod5 = save_input_to_DiscreteChoiceClass(num_of_market=100,
 
 BLP_MPEC = estimation.BLP_MPEC(demand_m100_prod3, true_parameters)
 
-BLP_MPEC.construct_exogenous_var()
+BLP_MPEC.construct_exogenous_var(exogeneous_varname = ['x1', 'x2', 'x3'], endogenous_varname = ['price'], first_stage_check = False)
 
 independent_var = ['x1', 'x2', 'x3', 'price']
-exogenous_var = ['x1', 'x2', 'x3'] + BLP_MPEC.exogeneous_var_BLPinstruments
+exogenous_var = ['x1', 'x2', 'x3'] + [ BLP_MPEC.exogeneous_var_Hausmaninstruments[0] ] + BLP_MPEC.exogeneous_var_BLPinstruments
 BLP_MPEC.MPEC_claim_var(independent_var,exogenous_var)
 
 
@@ -150,8 +150,8 @@ The description of the problem is:
 KTR_INFBOUND = KnitroSolver.KTR_INFBOUND
 KTR_CONTYPE_GENERAL = KnitroSolver.KTR_CONTYPE_GENERAL
 
-m = 307    # number of constraints
-n = 308    # number of parameters
+m = 308    # number of constraints
+n = 309    # number of parameters
 
 init_options = {
 # https://www.artelys.com/docs/knitro//3_referenceManual/knitroPythonReference.html
@@ -240,3 +240,16 @@ if __name__ == "__main__":
             ks.feas_error))
         print("                   KKT optimality violation = {}".format(
             ks.opt_error))
+
+# save the solution to x
+    output = pd.DataFrame(res.x, columns = ['delta_sigma_eta'])
+    outputpath = resultpath + '/' + 'Q2'
+    filename  = 'result_from_knitro_opt'
+    outputfile = outputpath + '/' + filename + '.csv'
+
+    output.to_csv(outputfile)
+
+
+
+
+
