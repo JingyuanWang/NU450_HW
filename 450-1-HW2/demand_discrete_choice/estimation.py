@@ -26,7 +26,6 @@ import importlib
 np.random.seed(seed=13344)
 
 
-
 # ---------------------------------------------------------------------------------
 # Class
 # ---------------------------------------------------------------------------------
@@ -131,18 +130,18 @@ class BLP_MPEC:
 
     # ------------------------------------------
     # function group 1: 
-    # generate exogeneous variables
+    # generate exogenous variables
     # ------------------------------------------
-    def construct_exogenous_var(self, first_stage_check = False, exogeneous_varname = None, endogenous_varname = None):
+    def construct_exogenous_var(self, first_stage_check = False, exogenous_varname = None, endogenous_varname = None):
         '''Claim exogenous and endogenous varaibles
         Construct all potential IVs, do first stage test
 
         Note: 
         1. all input must be list (could be list of 1 element)
-        2. exogeneous_varname and endogenous_varname can not be NONE if first_stage_check = True'''
+        2. exogenous_varname and endogenous_varname can not be NONE if first_stage_check = True'''
 
         # save exogenous var names
-        #self.exogeneous_var = exogeneous_varname
+        #self.exogenous_var = exogenous_varname
 
         # generate IV
         self.gen_BLP_instruments()
@@ -151,21 +150,21 @@ class BLP_MPEC:
         # check first stage for the IVs
         if first_stage_check:
             # check BLP instrument
-            var = self.exogeneous_var_BLPinstruments 
-            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+            var = self.exogenous_var_BLPinstruments 
+            self.first_stage(exogenous_varname = exogenous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
             
             # check hausman instrument
-            var = self.exogeneous_var_Hausmaninstruments
-            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+            var = self.exogenous_var_Hausmaninstruments
+            self.first_stage(exogenous_varname = exogenous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
 
             # check both
             # (1) all variables
-            var = self.exogeneous_var_BLPinstruments + self.exogeneous_var_Hausmaninstruments
-            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+            var = self.exogenous_var_BLPinstruments + self.exogenous_var_Hausmaninstruments
+            self.first_stage(exogenous_varname = exogenous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
 
             # (2) just 1 hausman instruments
-            var = self.exogeneous_var_BLPinstruments + [self.exogeneous_var_Hausmaninstruments[0]]
-            self.first_stage(exogeneous_varname = exogeneous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
+            var = self.exogenous_var_BLPinstruments + [self.exogenous_var_Hausmaninstruments[0]]
+            self.first_stage(exogenous_varname = exogenous_varname, endogenous_varname = endogenous_varname, IV_varname = var)
 
         return
     
@@ -173,7 +172,7 @@ class BLP_MPEC:
         ''' generate hauseman instrument
         Output:
         -- save the variable in self.products data frame
-        -- save the varaible names in self.exogeneous_var_BLPinstruments '''
+        -- save the varaible names in self.exogenous_var_BLPinstruments '''
 
         output_varnames = ['x2_other1', 'x2_other2' , 'x3_other1' , 'x3_other2']
 
@@ -190,7 +189,7 @@ class BLP_MPEC:
 
         # save
         self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
-        self.exogeneous_var_BLPinstruments = output_varnames
+        self.exogenous_var_BLPinstruments = output_varnames
 
         return 
 
@@ -198,7 +197,7 @@ class BLP_MPEC:
         ''' generate hauseman instrument
         Output:
         -- save the variable in self.products data frame
-        -- save the varaible names in self.exogeneous_var_Hausmaninstruments '''
+        -- save the varaible names in self.exogenous_var_Hausmaninstruments '''
         output_varnames = ['price_others', 'price_others_sq']
 
         df = self.products.copy()
@@ -213,9 +212,9 @@ class BLP_MPEC:
 
         # save
         self.products = df.sort_values(['market_id','product_id']).reset_index(drop = True)
-        self.exogeneous_var_Hausmaninstruments = output_varnames
+        self.exogenous_var_Hausmaninstruments = output_varnames
 
-    def first_stage(self, exogeneous_varname, endogenous_varname, IV_varname):
+    def first_stage(self, exogenous_varname, endogenous_varname, IV_varname):
         '''Check the first stage for IVs 
         All input must be lists '''
 
@@ -224,18 +223,18 @@ class BLP_MPEC:
 
         # get data
         df = self.products.copy()
-        x_varnames = exogeneous_varname + IV_varname
+        x_varnames = exogenous_varname + IV_varname
         
         # first stage reg
         # 1. partial out x:
         for y_varname in endogenous_varname:
-            result = mt.reg(df, y_varname, exogeneous_varname)
-            df['{}_ddot'.format(y_varname)] = df[y_varname] - df[exogeneous_varname].values@result.beta
+            result = mt.reg(df, y_varname, exogenous_varname)
+            df['{}_ddot'.format(y_varname)] = df[y_varname] - df[exogenous_varname].values@result.beta
 
         IV_varname_ddot = []
         for iv_varname in IV_varname:
-            result = mt.reg(df, iv_varname, exogeneous_varname)
-            df['{}_ddot'.format(iv_varname)] = df[iv_varname] - df[exogeneous_varname].values@result.beta
+            result = mt.reg(df, iv_varname, exogenous_varname)
+            df['{}_ddot'.format(iv_varname)] = df[iv_varname] - df[exogenous_varname].values@result.beta
             IV_varname_ddot = IV_varname_ddot + ['{}_ddot'.format(iv_varname)]
 
         # 2. First stage regression
@@ -256,12 +255,17 @@ class BLP_MPEC:
         return
 
 
-
-
-
     # III. Estimate --------------------------------------------------------------------
 
+    # ------------------------------------------
+    # function group 0: 
+    # 1. claim regressers
+    # 2. initialize coefficients
+    # ------------------------------------------
+
     def MPEC_claim_var(self, independent_var, exogenous_var):
+        '''independent var includes all the exogenous and endogenous variables of interests (the names)
+        exogenous var in cludes all exogenous variable names, x and IV'''
         
         df = self.products.sort_values(['market_id','product_id']).reset_index(drop =True)
 
@@ -269,14 +273,17 @@ class BLP_MPEC:
         self.MPEC_Z = df[exogenous_var].values
         self.MPEC_W = np.eye(self.MPEC_Z.shape[1])
 
-
+        # update self.JM: in case there are missings, so JM != J * M
+        # save q: number of moment conditions
         (self.JM, self.q) = self.MPEC_Z.shape 
+
+        # length of MPEC regression coefficients
         self.MPEC_parameter_length = self.JM + self.q + 1
 
         return 
 
-
     def initial_parameters(self, sigma_p = 1, true_par=True, maxiter = 100):
+        '''set initial parameters: by default, input true value as initial value '''
 
         delta = self.MPEC_par_true_delta
 
@@ -293,6 +300,10 @@ class BLP_MPEC:
         return parameters
 
     def initial_eta(self, delta):
+        '''Initialize eta: make sure it satisfies the constraint 
+
+        Note: differences in MPEC_claim_var() will cause differences in this initial value, both the length and the value'''
+
         JM = self.JM
         X = self.MPEC_X
         Z = self.MPEC_Z
@@ -305,6 +316,20 @@ class BLP_MPEC:
 
         return g
 
+    def get_alpha_beta(self, delta):
+        '''Get alpha and beta using IV regressions
+        (after claiming exogenous and endogenous varaibles) '''
+
+        JM = self.JM
+        X = self.MPEC_X
+        Z = self.MPEC_Z
+        W = self.MPEC_W  
+
+        Pz = Z@np.linalg.inv(Z.T@Z)@Z.T
+
+        beta = np.linalg.inv(X.T@Pz@X)@X.T@Pz@delta
+
+        return beta
 
     
     # ------------------------------------------
@@ -452,7 +477,7 @@ class BLP_MPEC:
     def MPEC_constraint_moment_conditions(self, parameter):
         
         JM = self.JM
-        q =self.q
+        q = self.q
         X = self.MPEC_X
         Z = self.MPEC_Z
         W = self.MPEC_W    
@@ -462,7 +487,7 @@ class BLP_MPEC:
         eta = parameter[-q:]     # k*1
         
         if Z.shape[1] == X.shape[1]:
-            raise Exception('dim(Z) < #ofpar, not identified')
+            raise Exception('dim(Z) < # of par, not identified')
         else:
             Pz = Z@np.linalg.inv(Z.T@Z)@Z.T
             Mxz = np.eye(JM) - X@np.linalg.inv(X.T@Pz@X)@X.T@Pz
@@ -643,9 +668,10 @@ class BLP_MPEC:
         return derivative
 
     # ------------------------------------------
-    # function group 4: 
-    # gradient for constraint
+    # function group 5: 
+    # Optimal Weighting matrix
     # ------------------------------------------
+    # emm ... 
 
 
 
