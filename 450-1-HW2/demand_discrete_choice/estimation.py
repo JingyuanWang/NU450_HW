@@ -222,31 +222,33 @@ class BLP_MPEC:
         import econtools.metrics as mt
 
         # get data
-        df = self.products.copy()
+        df = self.products.sort_values(['market_id','product_id']).copy()
         x_varnames = exogenous_varname + IV_varname
         
         # first stage reg
         # 1. partial out x:
-        for y_varname in endogenous_varname:
-            result = mt.reg(df, y_varname, exogenous_varname)
-            df['{}_ddot'.format(y_varname)] = df[y_varname] - df[exogenous_varname].values@result.beta
+        #for y_varname in endogenous_varname:
+        #    result = mt.reg(df, y_varname, exogenous_varname)
+        #    df['{}_ddot'.format(y_varname)] = df[y_varname] - df[exogenous_varname].values@result.beta
 
-        IV_varname_ddot = []
-        for iv_varname in IV_varname:
-            result = mt.reg(df, iv_varname, exogenous_varname)
-            df['{}_ddot'.format(iv_varname)] = df[iv_varname] - df[exogenous_varname].values@result.beta
-            IV_varname_ddot = IV_varname_ddot + ['{}_ddot'.format(iv_varname)]
+        #IV_varname_ddot = []
+        #for iv_varname in IV_varname:
+        #    result = mt.reg(df, iv_varname, exogenous_varname)
+        #    df['{}_ddot'.format(iv_varname)] = df[iv_varname] - df[exogenous_varname].values@result.beta
+        #    IV_varname_ddot = IV_varname_ddot + ['{}_ddot'.format(iv_varname)]
 
         # 2. First stage regression
         for y_varname in endogenous_varname:
 
-            result = mt.reg(df, '{}_ddot'.format(y_varname), IV_varname_ddot)
+            #result = mt.reg(df, '{}_ddot'.format(y_varname), IV_varname_ddot)
+            result = mt.reg(df, y_varname, x_varnames)
+            joint_F = result.Ftest(IV_varname) 
 
             print('#=======================================================')
             print('Endogenous var: {} '.format(y_varname))
             print('            IV: {} '.format(IV_varname))
             print(' ')
-            print('F = {}'.format(result.F))
+            print('Ftest = {}'.format(joint_F))
             print(' ')
             print('regression:')
             print(result)
@@ -320,7 +322,6 @@ class BLP_MPEC:
         '''Get alpha and beta using IV regressions
         (after claiming exogenous and endogenous varaibles) '''
 
-        JM = self.JM
         X = self.MPEC_X
         Z = self.MPEC_Z
         W = self.MPEC_W  
@@ -673,6 +674,9 @@ class BLP_MPEC:
     # ------------------------------------------
     # emm ... 
 
+    # IV. Post-estimation: elasticity/...
+    def elasticity():
+        return 
 
 
 
