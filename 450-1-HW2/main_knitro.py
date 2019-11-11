@@ -309,6 +309,7 @@ if __name__ == "__main__":
     filename  = 'result_from_knitro_opt_{}'.format(specification)
     outputfile = outputpath + '/' + filename + '.csv'
 
+    print(outputfile)
     output.to_csv(outputfile)
 
 
