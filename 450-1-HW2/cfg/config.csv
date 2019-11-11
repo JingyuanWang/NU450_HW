@@ -1,4 +1,7 @@
 specification,IV_varnames,update_true_share
-exogenous_p_x2_x3_1,price,FALSE
-,x2_other1,
+iv_BLP_hausman_w,x2_other1,TRUE
+,x2_other2,
 ,x3_other1,
+,x3_other2,
+,price_others,
+,w,
