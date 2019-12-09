@@ -33,11 +33,25 @@ np.random.seed(seed=13344)
 class BLP_MPEC:
     '''Samples for Discrete Choice Demand system estimation
     main part: 
-    -- 3 dataframs, consumers, products, consumer_product
-    -- functions: 
-       -- stats
-       -- simulation
-       -- estimation '''
+    -- 1 dataframs: products
+    -- 2 functions: 
+       -- 
+    -- Notation 
+       parameters:
+       -- J: number of products
+       -- M: mumber of markets
+       -- k: number of independent variables
+       -- q: number of demand side moment conditions = number of IVs
+       -- 2: number of supply side moment conditions (didn't assign a letter)
+
+       variables:
+       -- X:
+       -- Z:
+       -- W:
+       -- supplysideX:
+       -- supplysideZ:
+
+       '''
 
     # get the main dataframe (and get the set of variables)
     def __init__(self, DiscreteChoice, true_parameters = None, update = False):
@@ -125,7 +139,7 @@ class BLP_MPEC:
         # save
         self.MPEC_par_true_delta = delta_true
         self.MPEC_par_true_share = share_true
-        self.MPEC_par_price = df[price]
+        self.MPEC_par_price = df[price].values[:,np.newaxis]
 
         return 
 
@@ -270,26 +284,34 @@ class BLP_MPEC:
 
     # Here we start to claim the specification: what's the independent variables, what's the exogenous, what's the endogenous
 
-    def MPEC_claim_var(self, independent_var, exogenous_var):
+    def MPEC_claim_var(self, independent_var, exogenous_var, supply_side):
         '''independent var includes all the exogenous and endogenous variables of interests (the names)
         exogenous var in cludes all exogenous variable names, x and IV'''
         
         df = self.products.sort_values(['market_id','product_id']).reset_index(drop =True)
 
         self.MPEC_X = df[independent_var].values
-        self.MPEC_Z = df[exogenous_var].values
-        self.MPEC_W = np.eye(self.MPEC_Z.shape[1])
+        self.MPEC_Z = df[exogenous_var].values # Z includes exogenous X
+        if not supply_side:
+            self.MPEC_W = np.eye(self.MPEC_Z.shape[1])
+        if supply_side:
+            self.MPEC_supplysideX = df[['x1',  'w']].values
+            self.MPEC_supplysideZ = df[['x1', 'x2', 'x3', 'w']].values
+            self.MPEC_W = np.eye(self.MPEC_Z.shape[1] + 2) # 2 more moment conditions
 
         # update self.JM: in case there are missings, so JM != J * M
         # save q: number of moment conditions
         (self.JM, self.q) = self.MPEC_Z.shape 
 
         # length of MPEC regression coefficients
-        self.MPEC_parameter_length = self.JM + self.q + 1
+        if not supply_side:
+            self.MPEC_parameter_length = self.JM + self.q + 1
+        if supply_side:
+            self.MPEC_parameter_length = self.JM + 1 + self.q + 3 + 1 + 3
 
         return 
 
-    def initial_parameters(self, sigma_p = 1, true_par=True, maxiter = 100):
+    def initial_parameters(self, supply_side, sigma_p = 1, true_par=True, maxiter = 100 ):
         '''set initial parameters: by default, input true value as initial value '''
 
         delta = self.MPEC_par_true_delta
@@ -301,9 +323,18 @@ class BLP_MPEC:
             delta_init = delta
             delta = self.BACK_OUT_products_social_ave_valuation_FROM_market_share(sigma, delta_init, maxiter = maxiter)
 
-        eta = self.initial_eta(delta)
+        eta_d = self.initial_eta(delta)
 
-        parameters = np.vstack( (delta, sigma, eta)  )
+        parameters = np.vstack( (delta, sigma, eta_d)  )
+
+        if supply_side:
+            betas = self.get_alpha_beta(delta)
+            alpha = betas[-1]
+            mc = self.get_marginal_cost(delta,sigma,alpha)
+            gammas = self.get_gamma(mc)
+
+        parameters = np.vstack( (delta, sigma, eta_d, eta_s, alpha, gammas)  )
+
         return parameters
 
     def initial_eta(self, delta):
@@ -325,7 +356,10 @@ class BLP_MPEC:
 
     def get_alpha_beta(self, delta):
         '''Get alpha and beta using IV regressions
-        (after claiming exogenous and endogenous varaibles) '''
+        (after claiming exogenous and endogenous varaibles) 
+
+        Output:
+        -- #ofpar-by-1 array'''
 
         X = self.MPEC_X
         Z = self.MPEC_Z
@@ -337,14 +371,82 @@ class BLP_MPEC:
 
         return beta
 
+    def get_gamma(self,mc, worried_about_endogeneity = True):
+        '''
+        Output
+        -- 3-by-1 array '''
+
+        X = self.MPEC_supplysideX
+        Z = self.MPEC_supplysideZ # demand side X serve as IV
+
+        if worried_about_endogeneity:
+            Pz = Z@np.linalg.solve(Z.T@Z , Z.T)
+            gammas = np.linalg.solve(X.T@Pz@X , X.T@Pz@mc)
+        else:
+            gammas = np.linalg.inv(X.T@X)@X.T@mc
+
+        return gammas
+
+
+
+
     
     # ------------------------------------------
     # function group 1: 
-    # 1. get derivatives of demand to price 
+    # given true values, we could know: 
+    # 1.
+    # 2. derivatives of demand to price (and elasticity)
+    # 3. back out marginal cost
     # ------------------------------------------    
     
+    def substitution_matrix(self, delta, sigma, alpha):
+        '''a 300-by-300 matrix, diagnal 3*3 blocks are none-0, off-diagnal matrix = 0
+        Each element i,j is derivative of demand j to price i 
+        Diagnal elements should be negative, other none-0 elements should be positive '''
+
+        # 0. Get parameter values
+        # the matrix (of 1s and 0s) with cluster diagnals 
+        market_cluster = self.MEPC_par_market_block_matrix
+        n_sample = self.MEPC_par_n_sample
+        num_of_market = self.num_of_market
+        num_of_prod = self.num_of_prod
+        # the random sample
+        v = self.MPEC_par_sample_v
+        v_all = np.repeat(v, num_of_market*num_of_prod, axis = 0) # to vectorize the simulation    
+        
+
+        # 1. get interim share and price, given delta and sigma
+        price_varname = self.varname_randomcoeff
+        interim_integral_results = self.products_social_ave_valuation_TO_market_share(delta, 
+                                                                                        sigma , 
+                                                                                        price_varname, 
+                                                                                        for_gradient = True)
+        share_all = interim_integral_results['share_all']
+        price     = interim_integral_results['price']
+
+
+        # 2. derivatives
+        firstpart   = share_all*(abs(alpha) + v_all*sigma) # elementwise
+        derivatives = firstpart@share_all.T / n_sample
+        # @ product did the Integral!
+
+        derivatives = derivatives * market_cluster
+        # off diagnal blocks = 0
+
+        # adjust for the diagnals
+        diagnals_all = -share_all*(abs(alpha) + v_all*sigma) # elementwise
+        diagnals = (np.sum(diagnals_all, axis = 1) / n_sample)
+        diagnals_1dim = np.squeeze(diagnals) # num_of_prod * num_of_market - by - 1 , to num_of_prod * num_of_market - by - 0
+        diagnals_mtr = np.diag(diagnals_1dim)  # num_of_prod * num_of_market - by - num_of_prod * num_of_market
+        derivatives = diagnals_mtr + derivatives
+
+        return derivatives
+
     def derivative_demand_to_price(self, delta, sigma, alpha ):
-        '''Get drivatives given delta, sigma, and alpha'''
+        '''Get drivatives given delta, sigma, and alpha
+
+        Output:
+        -- 300-by-1'''
 
         # 0. Get parameter values
         # the matrix (of 1s and 0s) with cluster diagnals 
@@ -375,11 +477,38 @@ class BLP_MPEC:
 
         derivative = (np.sum(derivative_all, axis = 1) / n_sample)
 
-        return derivative
+        return derivative[:,np.newaxis]
 
+    def get_marginal_cost(self, delta, sigma, alpha, market_structure = 'oligopoly'):
+        '''
+        market_structure: 'oligopoly', 'collusion', 'competition'
+
+        Output:
+        -- 300-by-1 array '''
+
+        # estimate the derivatives (will calculate markup base on this)
+        derivative = self.derivative_demand_to_price(delta, sigma, alpha)
+
+        # back out marginal cost using price and markup (derivatives)
+        if market_structure == 'oligopoly':
+            marginal_c = self.MPEC_par_price - self.MPEC_par_true_share / (-derivative)
+        if market_structure == 'collusion':
+            # get price - mc:
+            Demand = self.MPEC_par_true_share
+            substitution_matrix = self.substitution_matrix(delta, sigma, alpha)
+
+            markup =  np.linalg.solve(substitution_matrix, -Demand)
+
+            marginal_c = self.MPEC_par_price - markup
+
+        if market_structure == 'competition':
+            marginal_c = self.MPEC_par_price
+
+        return marginal_c
 
     # ------------------------------------------
-    # function group 1: 
+    # function group 2: 
+    # demand side structual
     # 1. given delta, get shares, use build in integral
     # 2. given shares, back out delta: contraction mapping using 1
     # ------------------------------------------
@@ -480,38 +609,56 @@ class BLP_MPEC:
             print('does not converge in {} iterations, current error = {}'.format(iteration, error))
         return delta
 
+
+    # IV. Functions for Estimation ----------------------------------------------------------
     # ------------------------------------------
-    # function group 2: 
+    # function group 1: 
     # objective functions and constrains
     # ------------------------------------------
-    
-    def MPEC_obj(self, parameter, supply_side = False):
-        '''  '''
-        
+    def extract_paremeters(self, parameter, supply_side = False):
+        '''extract parameters. '''
+
         JM = self.JM
-        q =self.q
+        q  = self.q
 
-        if ~supply_side:
+        if supply_side:
+            if len(parameter) != (JM + 1 + q + 2 + 1 + 3) :
+                raise Exception('len(parameter) {} != (JM + 1(sigma) + q(mc_d) + 2(mc_s) + 1(alpha) + 3(gamma) )'.format(len(parameter)))
+            delta = parameter[0:JM]        # JM*1
+            sigma = parameter[JM]          # scalar
+            eta_d   = parameter[JM+1: JM+q+1]   # q*1 
+            eta_s   = parameter[JM+q+1: JM+q+3]   # 2*1 
+            alpha = parameter[JM+q+3]          # scalar
+            gamma = parameter[-3:]             # 3 * 1
+            return (delta, sigma, eta_d, eta_s, alpha, gamma)
+        else:
             if len(parameter) != (JM + q + 1) :
-                raise Exception('len(parameter) != (JM + q + 1 (sigma) )')
-
-            delta = parameter[0:JM]   # JM*1
+                raise Exception('len(parameter) {} != (JM + 1 (sigma) + q)'.format(len(parameter)) )
+            delta = parameter[0:JM]  # JM*1
             sigma = parameter[JM]     # scalar
-            eta = parameter[-q:]      # q*1
+            eta = parameter[-q:]     # k*1
+            return (delta, sigma, eta)
+
+        
+    
+    def MPEC_obj(self, parameter, supply_side):
+        '''  '''
+
+        if not supply_side:
+            print("A")
+
+        if not supply_side:
+            (delta, sigma, eta) = self.extract_paremeters(parameter, supply_side)
             
             W = self.MPEC_W
             obj = eta.T@W@eta
 
         if supply_side:
-            if len(parameter) != (JM + q + 1 + 2) :
-                raise Exception('len(parameter) != (JM + q + 1 (sigma) + 2 (alpha, and 1 more moment condition) )')
+            (delta, sigma, eta_d, eta_s, alpha, gamma) = self.extract_paremeters(parameter, supply_side)
 
-            delta = parameter[0:JM]        # JM*1
-            sigma = parameter[JM]          # scalar
-            eta   = parameter[-q+2:-1]     # (q+1)*1
-            alpha = parameter[-1]          # scalar
+            W = self.MPEC_W 
 
-            W = self.MPEC_W # dim is wrong
+            obj = eta.T@W@eta
         
         return obj
 
@@ -540,9 +687,7 @@ class BLP_MPEC:
         Z = self.MPEC_Z
         W = self.MPEC_W    
 
-        delta = parameter[0:JM]  # JM*1
-        sigma = parameter[JM]     # scalar
-        eta = parameter[-q:]     # k*1
+        (delta, sigma, eta) = self.extract_paremeters(parameter, supply_side)
         
         if Z.shape[1] == X.shape[1]:
             raise Exception('dim(Z) < # of par, not identified')
@@ -557,13 +702,12 @@ class BLP_MPEC:
     
     # When we have the supply side:
     def constraint_supplyside_moment_condition(self, parameter, supply_side = False):
+        ''' 2 more moment conditions '''
 
-        if ~supply_side:
+        if not supply_side:
             raise Exception('Not estimating with supply side, you should not call this function')
 
-        delta = parameter[0:JM]  # JM*1
-        sigma = parameter[JM]
-        alpha = parameter[-1]
+        (delta, sigma, eta_d, eta_s, alpha, gamma) = self.extract_paremeters(parameter)
 
         # estimate the derivatives (will calculate markup base on this)
         derivative = self.derivative_demand_to_price(delta, sigma, alpha)
@@ -584,7 +728,7 @@ class BLP_MPEC:
         Output:
         -- alpha: a scalar, not array'''
 
-        if ~supply_side:
+        if not supply_side:
             raise Exception('Not estimating with supply side, you should not call this function')
 
         delta = parameter[0:JM]  # JM*1
@@ -597,7 +741,7 @@ class BLP_MPEC:
 
 
     # ------------------------------------------
-    # function group 3: 
+    # function group 2: 
     # gradient for objective function
     # ------------------------------------------
     def MPEC_gradient_obj(self, parameter):
@@ -631,7 +775,7 @@ class BLP_MPEC:
         return 2 * W@eta
 
     # ------------------------------------------
-    # function group 4: 
+    # function group 3: 
     # gradient for constraint
     # ------------------------------------------
 
@@ -767,7 +911,7 @@ class BLP_MPEC:
         return derivative
 
     # ------------------------------------------
-    # function group 5: 
+    # function group 4: 
     # Optimal Weighting matrix
     # ------------------------------------------
     # emm ... 

@@ -19,7 +19,19 @@ import matplotlib.pyplot as plt
 
 
 # I. plot histogram and a kernal density 
+def plot_fit(yvar, xvar, ylabel = None, xlabel = None, title = 'Scatter plot'):
 
+        # Figure parameters
+        area = np.pi*3
+        # Plot
+        plt.figure()
+        plt.scatter(xvar, yvar, s=area, alpha=0.5, color = 'maroon')
+        plt.title(title)
+        if xlabel != None:
+            plt.xlabel(xlabel)
+        if ylabel != None:
+            plt.ylabel(ylabel)
+        plt.show()
 
 def hist_and_kdensity(variable_series, var_label, save = False, figpath = None, figname = None):
     '''plot histogram and a kernal density 
@@ -47,7 +59,7 @@ def hist_and_kdensity(variable_series, var_label, save = False, figpath = None, 
 
     plt.show()
 
-def hist_and_kdensity_bygroup(df, varname, var_label, groupname, group_label, save = False, figpath = None, figname = None):
+def hist_and_kdensity_bygroup(df, varname, var_label, groupname, group_label, label=True, save = False, figpath = None, figname = None):
     ''' Histogram of all values, kernel densities for each group.
     Input:
     -- df: a data frame with the variable of interest and the group variable'''
@@ -63,7 +75,7 @@ def hist_and_kdensity_bygroup(df, varname, var_label, groupname, group_label, sa
     
     for i in df[groupname].unique():
         value_group = df.loc[df[groupname] == i,varname]
-        value_group.plot.kde( label = '{} {}'.format(group_label,i))
+        value_group.plot.kde( label = '{} {}'.format(group_label,i), color='grey')
     
     # axis
     plt.xlabel(var_label)
@@ -72,7 +84,8 @@ def hist_and_kdensity_bygroup(df, varname, var_label, groupname, group_label, sa
     plt.xlim(min_value,max_value)
     
     # legend
-    plt.legend(loc = 'best')
+    if label:
+        plt.legend(loc = 'best')
     
     # save
     if save:

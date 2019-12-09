@@ -1,7 +1,4 @@
 specification,IV_varnames,update_true_share
-iv_BLP_hausman_w,x2_other1,TRUE
-,x2_other2,
-,x3_other1,
-,x3_other2,
-,price_others,
+iv_allhausman_w,price_others,TRUE
+,price_others_sq,
 ,w,
