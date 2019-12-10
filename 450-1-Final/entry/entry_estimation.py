@@ -129,6 +129,7 @@ class Entry_Estimation:
 
         # 1. get data
         df = self.sample_df.copy()
+        df = df.replace(0, 0.001)
 
         # 2. generate variables
         if true_prob:
@@ -154,6 +155,7 @@ class Entry_Estimation:
             df['NA_NB_diff'] = df['N_A'] - df['N_B']
 
         return df.replace([np.inf, -np.inf], np.nan).dropna()
+        #return df
 
     def _OLS_first_stage(self, df):
 
