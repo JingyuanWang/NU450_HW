@@ -85,7 +85,7 @@ class Entry_Model:
 
 
     # II. Solve for equilibirum --------------------------------------------------------------
-    def expected_prob_To_result_prob(self, theta_input, X_m_input, N_m_input, expected_prob_A_input, expected_prob_B_input ):
+    def _expected_prob_To_result_prob(self, theta_input, X_m_input, N_m_input, expected_prob_A_input, expected_prob_B_input ):
         '''A function calculate market share using given (product social value) delta, using simulated integral 
         
         Input:
@@ -131,7 +131,7 @@ class Entry_Model:
             return np.array((result_prob_0, result_prob_A, result_prob_B))
 
     def Solve_prob_of_entry_SymmetricREE(self, theta_input, X_m_input, N_m_input):
-        '''Solve for the fixed point of function self.expected_prob_To_result_prob(theta, X_m, N_m, ...) 
+        '''Solve for the fixed point of function self._expected_prob_To_result_prob(theta, X_m, N_m, ...) 
 
         Input:
         -- theta_input: 5 element array or list, parameters of interest
@@ -148,14 +148,14 @@ class Entry_Model:
             # initial value
             x0 = np.array([.5, .5])
             # solve
-            fixed_point = opt.fixed_point(lambda x: self.expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0], x[1])[1:].flatten(), x0)
+            fixed_point = opt.fixed_point(lambda x: self._expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0], x[1])[1:].flatten(), x0)
 
         # (2) vector
         else:
             # initial value: 2-by-NumberOfMarkets 
             x0 = np.ones( (2,len(X_m_input)) ) * 0.5
             # solve
-            fixed_point = opt.fixed_point(lambda x: self.expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0,:], x[1,:])[1:,:], x0)
+            fixed_point = opt.fixed_point(lambda x: self._expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0,:], x[1,:])[1:,:], x0)
 
         # P_0 = 1-P_A - P_B
         prob_0 = 1-np.sum(fixed_point, axis = 0)
@@ -217,6 +217,52 @@ class Entry_Model:
         plt.close()
 
         return fig
+
+
+    # III. Simulation --------------------------------------------------------------    
+    def simulate_sample(self, theta_input, sample_size):
+        '''Simulation:
+
+        Input:
+        --theta_input: 5 element array or list, parameters of interest
+        --sample_size: int, number of markets
+
+        Parameters:
+        X_m ~ U[0,1]
+
+        Output:
+        --sample: sample_size-by-4 np.array. (N_A,N_B,Nm,Xm)
+
+        '''
+
+        # 1. import parameters
+        n = sample_size
+
+
+        # 2. generate X_m and N_m
+        N_m = np.random.randint(8,16, size = n)
+        X_m = np.random.uniform(low = 0, high = 1, size = n)
+
+
+        # 2. simulate the probability and number of entry
+        prob = self.Solve_prob_of_entry_SymmetricREE(theta_input, X_m, N_m)
+        
+        N_A = np.floor(prob[1,:]*N_m).astype(int)
+        N_B = np.floor(prob[2,:]*N_m).astype(int)
+
+        # 3. aggregate to n-by-4 array and n-by-6 array
+        sample    = np.array([N_A, N_B, N_m, X_m])
+
+        # 4. save
+        self.sample      = sample 
+        self.sample_size = n
+        self.sample_prob_entry  = prob
+        self.sample_theta_true  = theta_input
+
+        return 
+
+
+
 
 # ---------------------------------------------------------------------------------
 # Functions
