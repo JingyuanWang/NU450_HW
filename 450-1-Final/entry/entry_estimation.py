@@ -110,10 +110,10 @@ class Entry_Estimation:
     # III. Two-step ------------------------------------------------------
     def OLS(self, true_prob=False):
 
-        df = self._OLS_gen_var()
+        df = self._OLS_gen_var(true_prob)
 
-        res_stage1 = self._OLS_first_stage(df, true_prob)
-        res_stage2 = self._OLS_second_stage(df, true_prob)
+        res_stage1 = self._OLS_first_stage(df)
+        res_stage2 = self._OLS_second_stage(df)
 
         # extract parameters
         se = np.insert(res_stage1.se.values, [2,4], res_stage2.se.values)
@@ -125,41 +125,45 @@ class Entry_Estimation:
 
         return res
 
-    def _OLS_gen_var(self):
+    def _OLS_gen_var(self, true_prob=False):
 
         # 1. get data
         df = self.sample_df.copy()
 
         # 2. generate variables
-        # dependent:
-        df['log_PA_PB'] = np.log(df['N_A']/df['N_B'])
-        df['N_0'] = df['N_m'] - df['N_A'] - df['N_B']
-        df['log_PB_P0'] = np.log(df['N_B']/df['N_0'])
-
-        df['log_PA_PB_true'] = np.log(df['P_A']/df['P_B'])  
-        df['log_PB_P0_true'] = np.log(df['P_B']/df['P_0'])      
-
-        # independent var:
-        df['const'] = 1
-        df['NA_NB_diff'] = df['N_A'] - df['N_B']
-
-        return df
-
-    def _OLS_first_stage(self, df, true_prob = False):
-
         if true_prob:
-            res = mt.reg(df,'log_PB_P0_true', ['const', 'X_m','N_B', 'N_A'] )
+            # dependent:
+            df['log_PA_PB'] = np.log(df['P_A']/df['P_B'])  
+            df['log_PB_P0'] = np.log(df['P_B']/df['P_0']) 
+
+            # independent var:
+            df['const'] = 1
+            df['NA_NB_diff'] = (df['P_A'] - df['P_B'])*df['N_m']    
+
+            df['N_A'] = df['P_A']*df['N_m']
+            df['N_B'] = df['P_B']*df['N_m']
+
         else:
-            res = mt.reg(df,'log_PB_P0', ['const', 'X_m','N_B', 'N_A'] )
+            # dependent:
+            df['log_PA_PB'] = np.log(df['N_A']/df['N_B'])
+            df['N_0'] = df['N_m'] - df['N_A'] - df['N_B']
+            df['log_PB_P0'] = np.log(df['N_B']/df['N_0'])
+
+            # independent var:
+            df['const'] = 1
+            df['NA_NB_diff'] = df['N_A'] - df['N_B']
+
+        return df.replace([np.inf, -np.inf], np.nan).dropna()
+
+    def _OLS_first_stage(self, df):
+
+        res = mt.reg(df,'log_PB_P0', ['const', 'X_m','N_B', 'N_A'] )
 
         return res
 
-    def _OLS_second_stage(self, df, true_prob = False):
+    def _OLS_second_stage(self, df):
 
-        if true_prob:
-            res = mt.reg(df,'log_PA_PB_true', ['const','NA_NB_diff'] )
-        else:
-            res = mt.reg(df,'log_PA_PB', ['const','NA_NB_diff'] )
+        res = mt.reg(df,'log_PA_PB', ['const','NA_NB_diff'] )
 
         return res
 

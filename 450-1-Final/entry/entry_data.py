@@ -223,10 +223,17 @@ class Entry_Model:
         # 2. simulate the probability and number of entry
         prob = self.Solve_prob_of_entry_SymmetricREE(theta_input, X_m, N_m)
         
-        N_A = np.floor(prob[1,:]*N_m).astype(int)
-        N_B = np.floor(prob[2,:]*N_m).astype(int)
+        # 3. simulate N_A N_B
+        N = np.zeros((2,n))
+        for i in range(n):
+            n_m = N_m[i]
+            p_A = prob[1,i]
+            p_B = prob[2,i]
+            N[:,i] = self._simulate_firm_choice_given_P(n_m, p_A, p_B)
+        N_A = N[0,:]
+        N_B = N[1,:]
 
-        # 3. aggregate to n-by-4 array and n-by-6 array
+        # 4. aggregate to n-by-4 array and n-by-6 array
         sample    = np.array([N_A, N_B, N_m, X_m])
 
         # 4. save
@@ -236,6 +243,15 @@ class Entry_Model:
         self.sample_theta_true  = _check_and_covert_to_array(theta_input)
 
         return 
+
+    def _simulate_firm_choice_given_P(self, n_m, p_A, p_B):
+
+        p = np.random.uniform(low = 0, high = 1, size = n_m)
+        
+        n_A = sum(p<p_A)
+        n_B = sum(p<(p_B+p_A)) - n_A
+
+        return np.array([n_A, n_B])
 
 
 
