@@ -31,34 +31,10 @@ np.random.seed(seed=13344)
 # Class
 # ---------------------------------------------------------------------------------
 class Entry_Model:
-    '''Samples for Discrete Choice Demand system estimation
-    main part: 
-    -- 1 dataframs: products
-    -- 2 functions: 
-       -- 
-    -- Notation 
-       parameters:
-       -- J: number of products
-       -- M: mumber of markets
-       -- k: number of independent variables
-       -- q: number of demand side moment conditions = number of IVs
-       -- 2: number of supply side moment conditions (didn't assign a letter)
+    '''Entry model: simulate data, and basic analysis given the true value '''
 
-       variables:
-       -- X:
-       -- Z:
-       -- W:
-       -- supplysideX:
-       -- supplysideZ:
-
-       '''
-
-    # get the main dataframe (and get the set of variables)
     def __init__(self):
-        '''initialize a dataclass for discrete demand system analysis
-        
-        Input:
-        -- DiscreteChoice, classed defined in DiscreteChoice module in the same folder '''
+        ''' '''
         
 
 
@@ -148,14 +124,14 @@ class Entry_Model:
             # initial value
             x0 = np.array([.5, .5])
             # solve
-            fixed_point = opt.fixed_point(lambda x: self._expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0], x[1])[1:].flatten(), x0)
+            fixed_point = opt.fixed_point(lambda x: self._expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0], x[1])[1:].flatten(), x0, maxiter = 2000)
 
         # (2) vector
         else:
             # initial value: 2-by-NumberOfMarkets 
             x0 = np.ones( (2,len(X_m_input)) ) * 0.5
             # solve
-            fixed_point = opt.fixed_point(lambda x: self._expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0,:], x[1,:])[1:,:], x0)
+            fixed_point = opt.fixed_point(lambda x: self._expected_prob_To_result_prob(theta_input, X_m_input, N_m_input, x[0,:], x[1,:])[1:,:], x0, maxiter = 2000)
 
         # P_0 = 1-P_A - P_B
         prob_0 = 1-np.sum(fixed_point, axis = 0)
@@ -257,7 +233,7 @@ class Entry_Model:
         self.sample      = sample 
         self.sample_size = n
         self.sample_prob_entry  = prob
-        self.sample_theta_true  = theta_input
+        self.sample_theta_true  = _check_and_covert_to_array(theta_input)
 
         return 
 
