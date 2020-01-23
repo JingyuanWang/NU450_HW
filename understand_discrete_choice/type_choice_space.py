@@ -226,7 +226,7 @@ class one_market:
         plt.plot(x, prob[:, 0], color = 'silver')
         plt.plot(x, prob[:, 1], color = 'orange')
         plt.plot(x, prob[:, 2], color = 'maroon')
-        plt.xlabel('consumer types (random taste)')
+        plt.xlabel('consumer types (random taste, normalized to 0-1)')
         plt.ylabel('prob of choice')
         plt.title('Choice with Logit Error', fontsize = 12)   
 
@@ -235,7 +235,7 @@ class one_market:
         plt.plot(x, choice[:, 0], color = 'silver', label = 'outside')
         plt.plot(x, choice[:, 1], color = 'orange', label = 'low quality')
         plt.plot(x, choice[:, 2], color = 'maroon', label = 'high quality')
-        plt.xlabel('consumer types (random taste)')
+        plt.xlabel('consumer types (random taste, normalized to 0-1)')
         plt.ylabel('prob of choice')
         plt.title('Choice without Error Term (Vertical Diff theory)', fontsize = 12)
 
