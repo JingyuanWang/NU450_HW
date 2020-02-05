@@ -98,11 +98,16 @@ class entry_likelihood:
         if order == 'highestfirst':
             # firm random draw: 300*5000, the first 3 rows are the 3 firms in the first market
             phi_fm = self._get_firm_specific_cost(alpha, mu, sigma)
-            #simul_order = self._simul_entry_order_highestfirst(M,F, n_sample, entry, phi_fm)
+            simul_order = self._simul_entry_order_highestfirst(M,F, n_sample, entry, phi_fm)
         
         # 3. likelihood
         if order == None:
             prob = np.sum((entry*simul_enter) + (1-entry)*simul_notenter , axis = 1)/n_sample
+
+            # equivalent
+            #simul_market_level = np.prod(((entry*simul_enter) + (1-entry)*simul_notenter).reshape(M,F,n_sample), axis = 1)
+            #prob = np.sum(simul_market_level , axis = 1)/n_sample
+
         else:
             simul_market_level = np.prod(((entry*simul_enter) + (1-entry)*simul_notenter).reshape(M,F,n_sample), axis = 1)
             simul_market_level = simul_market_level*simul_order
@@ -115,7 +120,6 @@ class entry_likelihood:
         likelihood = np.sum( np.log(prob) )
 
         return likelihood
-        #return likelihood
 
     def _simul_entry_order_lowestfirst(self, M,F, n_sample, entry, phi_fm):
         '''Output:
@@ -139,6 +143,30 @@ class entry_likelihood:
 
         simul_order = max_phi_entered < min_phi_notenter
 
+
+        return simul_order
+
+    def _simul_entry_order_highestfirst(self, M,F, n_sample, entry, phi_fm):
+        '''Output:
+        -- simul_ordering: 100*5000, simulate whether the market satisfies the assumed ordering '''
+
+        # get the maximum cost of firms that entered
+        costs_enter = (entry * phi_fm)
+        costs_enter[costs_enter == 0] = np.nan
+        min_phi_entered = np.min( costs_enter.reshape( (M,F,n_sample) ), 
+                                 where=~np.isnan(costs_enter.reshape( (M,F,n_sample) )), 
+                                 axis = 1 , 
+                                 initial = 9999)        
+
+        # get the minimum cost of firms that did not enter
+        costs_notenter = (1-entry) * phi_fm
+        costs_notenter[costs_notenter == 0] = np.nan
+        max_phi_notenter = np.max( costs_notenter.reshape( (M,F,n_sample) ), 
+                                 where=~np.isnan(costs_notenter.reshape( (M,F,n_sample) )), 
+                                 axis = 1 , 
+                                 initial = -9999)        
+
+        simul_order = min_phi_entered > max_phi_notenter
 
         return simul_order
  
