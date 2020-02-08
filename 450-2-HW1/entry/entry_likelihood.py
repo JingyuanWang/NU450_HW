@@ -8,6 +8,11 @@
 # ------------------------------------------------------------------------
 '''
 
+# Notations:
+# M: num of markets
+# F: num of firms in each market
+# n_sample: number of simulation draws to integral
+
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
@@ -74,7 +79,7 @@ class entry_likelihood:
         X = self.df[ ['X_m'] ].values
         N = self.df[ ['N_m'] ].values
 
-        return (M,F, u0,Z, X,N, n_sample)
+        return (M, F, u0, Z, X, N, n_sample)
 
     # II calculate likelihood -----------------------------------------------------------
     def get_likelihood(self, alpha, beta, delta, mu, sigma, order = None):
@@ -196,8 +201,8 @@ class entry_likelihood:
         (_,_,_,Z,X,N,_) = self._get_data()
 
         # market level profit for the entrant and the potential entrant, 100*1, each row is a market
-        pi_market_enter = X*beta + np.log(N)*delta 
-        pi_market_notenter = X*beta + np.log(N+1)*delta 
+        pi_market_enter = X*beta - np.log(N)*delta 
+        pi_market_notenter = X*beta - np.log(N+1)*delta 
 
         return (pi_market_enter, pi_market_notenter)
 
@@ -213,9 +218,6 @@ class entry_likelihood:
         phi_fm =  alpha*Z.reshape( (M*F,1) , order = 'C' ) + np.kron( np.ones( (M,1) ) , u )
 
         return phi_fm
-
-
-
 
 
 
