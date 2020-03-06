@@ -77,8 +77,6 @@ class FPA_lognormal:
         for i in range(self.n_samples):
             numerator = self._simulated_int_cdf(v_ub = v_i[i], n_bidders = n_bidders)
 
-
-
         return 
 
     def _calculate_cdf(self, v):
