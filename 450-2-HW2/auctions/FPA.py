@@ -24,32 +24,94 @@ from sklearn.utils import resample
 class FPA_lognormal:
     """docstring for entry_likelihood"""
 
-    def __init__(self, n_samples= 100, n_simul_draws = 1000):
+    def __init__(self, n_simul_draws = 1000):
+        ''' 
+        -- n_simul_draws is used to approx integrals, MUST BE LARGE ENOUGH。 
+            Here I use the cdf function from scipy. But if the distribution is not normal, need to really draw the values and integral '''
 
 
         self.dist_par_sigma = np.sqrt(0.2)
         self.dist_par_mu = 1
-        
-        self._draw_private_values(n_samples)
         self._draw_sample_for_integral(n_simul_draws)
+
 
 
         return 
 
+    # II. functions ----------------------------------------------------
+    def get_bids(self, private_values , n_bidders ):
+        '''private_values should be an array or list '''
 
-    # I. import parameters and simulate data ----------------------------------------------------
-    def _draw_private_values(self, n_samples):
+        private_values = np.array(private_values)
+
+        manipulation = self._get_manipulation(private_values, n_bidders=n_bidders)
+
+        bids = private_values - manipulation
+
+        return bids
+
+    def get_rents(self, private_values, n_bidders ):
+        '''rents = manipulation * prob_of_win, exactly the numerator of manipulation '''
+
+        v_i = np.array(private_values)
+        
+        rents = []
+        for i in range(len(v_i)):
+            numerator = self._simulated_int_cdf(v_ub = v_i[i], n_bidders = n_bidders)
+            rents = rents + [numerator]
+        rents = np.array(rents)
+
+        return rents
+
+    def _get_manipulation(self, private_values, n_bidders ):
+
+        v_i = np.array(private_values)
+
+        manipulation = []
+        for i in range(len(v_i)):
+            numerator = self._simulated_int_cdf(v_ub = v_i[i], n_bidders = n_bidders)
+            denominator = self._calculate_cdf(v_i[i])**(n_bidders-1)
+            manipulation = manipulation + [numerator/denominator]
+        manipulation = np.array(manipulation)
+
+        return manipulation
+
+
+    def simulate_auctions(self, n_auctions, n_bidders):
+
+        
+        # 1. simulate all bids
+        all_bids = []
+        all_pvs = []
+        for i in range(n_bidders):
+            pv_i = self._draw_private_values(n_auctions)
+            bid_i = self.get_bids(pv_i, n_bidders = n_bidders)
+
+            all_bids = all_bids + [bid_i]
+            all_pvs = all_pvs + [pv_i]
+
+        all_pvs = np.array(all_pvs)
+        all_bids = np.array(all_bids)
+
+        # 2. get the winner
+        winning_bids = np.max(all_bids, axis = 0)
+
+        return winning_bids, all_bids, all_pvs
+
+
+
+
+    # III. import parameters and simulate data ----------------------------------------------------
+    def _draw_private_values(self, n_auctions):
 
         sigma = self.dist_par_sigma
         mu = self.dist_par_mu
 
-        v_i = stats.lognorm.rvs(s= sigma, loc = 0, scale = np.exp(mu), size=n_samples)
-        #v_i = np.random.lognormal(mean=1, sigma= 0.2, size=n_samples)
+        v_i = stats.lognorm.rvs(s= sigma, loc = 0, scale = np.exp(mu), size=n_auctions)
+        #v_i = np.random.lognormal(mean=1, sigma= 0.2, size=n_auctions)
         v_i = np.clip(v_i, 0, 5)
-        self.v_i = v_i
-        self.n_samples=  n_samples
 
-        return
+        return v_i
 
     def _draw_sample_for_integral(self, n_simul_draws):
 
@@ -68,20 +130,27 @@ class FPA_lognormal:
 
         return
 
-    def get_bids(self, n_bidders = 2):
-        '''the input should be an array '''
 
-        v_i = self.v_i
 
-        manipulation = []
-        for i in range(self.n_samples):
-            numerator = self._simulated_int_cdf(v_ub = v_i[i], n_bidders = n_bidders)
-
-        return 
-
+    # IV. calculation functions ----------------------------------------------------
     def _calculate_cdf(self, v):
 
-        return
+        x = self.int_simul_x_draws
+        cdf_x = self.int_simul_cdf_draws
+
+        cdf_lb = cdf_x[x<=v]
+        if len(cdf_lb)!=0 :
+            cdf_lb = cdf_lb[-1]
+        else:
+            cdf_lb = 0
+        cdf_ub = cdf_x[x>v]
+        if len(cdf_ub)!=0 :
+            cdf_ub = cdf_ub[0]
+        else:
+            cdf_ub = 1
+
+
+        return (cdf_lb+cdf_ub)/2
 
     def _simulated_int_cdf(self, v_ub, n_bidders):
         '''' integral of cdf^{n-1} dx, from 0 to upper bound v_ub. '''
