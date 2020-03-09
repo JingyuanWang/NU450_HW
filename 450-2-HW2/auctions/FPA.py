@@ -20,6 +20,26 @@ import scipy.optimize as opt
 from scipy.stats import norm
 import importlib
 from sklearn.utils import resample
+import os,sys,inspect
+
+dirpath = os.getcwd()
+while  (os.path.basename(dirpath) != "450-2-HW2") :
+    dirpath = os.path.dirname(dirpath)
+
+targetdir = dirpath + 'auctions'
+
+if targetdir not in sys.path:
+    sys.path.insert(0,targetdir)
+
+
+from auctions import empirical_distributions 
+
+importlib.reload(empirical_distributions)
+
+
+# ---------------------------------------------------------------------------------
+# class 
+# ---------------------------------------------------------------------------------
 
 class FPA_lognormal:
     """docstring for entry_likelihood"""
@@ -107,9 +127,14 @@ class FPA_lognormal:
         sigma = self.dist_par_sigma
         mu = self.dist_par_mu
 
-        v_i = stats.lognorm.rvs(s= sigma, loc = 0, scale = np.exp(mu), size=n_auctions)
+        v_i = stats.lognorm.rvs(s= sigma, loc = 0, scale = np.exp(mu), size=n_auctions*10)
         #v_i = np.random.lognormal(mean=1, sigma= 0.2, size=n_auctions)
-        v_i = np.clip(v_i, 0, 5)
+        
+        # v_i = np.clip(v_i, 0, 5)
+        # the clip will cause a problem in estimation: there would be a peak in the pdf where pv=5, bids around the higest bids
+
+        v_i = v_i[v_i<=5]
+        v_i = v_i[:n_auctions]
 
         return v_i
 
@@ -169,6 +194,107 @@ class FPA_lognormal:
 
         return integral
 
+
+
+# ---------------------------------------------------------------------------------
+# class 2 
+# ---------------------------------------------------------------------------------
+
+class estimate_FPA:
+
+
+    def __init__(self, n_bidders, winning_bids = None, all_bids = None, true_pvs = None):
+
+        self.n_bidders = n_bidders
+        self.obs_winning_bids = winning_bids
+        self.obs_all_bids = all_bids
+        self.true_pvs = true_pvs
+
+        return 
+
+
+
+
+    # I. back out true values ----------------------------------------------------
+    def back_out_private_values_pointbypoint_fromallbids(self):
+
+        if self.obs_all_bids is not None:
+            # ---- 1. empirical distribution of all bids
+            self._get_empirical_bids_distribution()
+
+            length, width = self.obs_all_bids.shape
+            all_bids = self.obs_all_bids.reshape( (length*width,) ) 
+            cdf_values = self.bids_dist.cdf( all_bids )
+            pdf_values = self.bids_dist.pdf( all_bids )
+
+            # ---- 2. back out true values
+            true_pvs = all_bids + 1/(self.n_bidders - 1) * cdf_values/pdf_values 
+
+            self.est_pvs =  true_pvs.reshape( (length, width) )
+            return 
+
+        else:
+
+            print('Do not observe all bids. Can not approx cdf')
+            return
+
+    def back_out_private_values_pointbypoint_fromwinningbids(self):
+
+        if self.obs_winning_bids is not None:
+
+            # ---- 1. empirical distribution of all bids
+            self._get_empirical_bids_distribution(all_bids=False)
+
+            winning_bids = self.obs_winning_bids
+            cdf_values = self.winning_bids_dist.cdf( winning_bids )
+            pdf_values = self.winning_bids_dist.pdf( winning_bids )
+
+            # adjust (because the above is the winning distribution)
+            cdf_values = cdf_values**(1/self.n_bidders)
+            pdf_values = pdf_values / (self.n_bidders * (cdf_values**(self.n_bidders-1) ) )
+
+            # ---- 2. back out true values
+            true_pvs = winning_bids + 1/(self.n_bidders - 1) * cdf_values/pdf_values 
+
+            self.est_pvs =  true_pvs
+            return 
+
+        else:
+
+            print('Do not have winning bids data')
+            return
+
+
+            
+    # II. get the distribution ----------------------------------------------------
+    def estimate_private_value_distribution(self, from_all_bids = True):
+
+        if not hasattr(self, 'est_pv'):
+            if from_all_bids:
+                self.back_out_private_values_pointbypoint_fromallbids()
+            else:
+                self.back_out_private_values_pointbypoint_fromwinningbids()
+        
+        self.pv_dist = empirical_distributions.rv_1D(self.est_pvs)
+        
+        return
+
+
+    # III. other functions  ----------------------------------------------------
+    def _get_empirical_bids_distribution(self, all_bids = True):
+
+        if all_bids:
+            if self.obs_all_bids is not None:
+                self.bids_dist = empirical_distributions.rv_1D(self.obs_all_bids)
+            else:
+                print('Do not observe all bids. Can not approx cdf')
+            return
+        else:
+            if self.obs_winning_bids is not None:
+                self.winning_bids_dist = empirical_distributions.rv_1D(self.obs_winning_bids)
+            else:
+                print('Do not observe all bids. Can not approx cdf')
+            return
 
 
 
