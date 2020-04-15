@@ -129,6 +129,8 @@ class observations:
         
         rho, sigma_rho = est_func_step1_transitions.est_rho(self.df)
         self.transition_fromstep1 = est_func_step1_transitions.transition_mat(rho, sigma_rho, self.rc_cutoffs, show_transition_mat = True)
+        self.rho_fromstep1 = rho
+        self.sigma_rho_fromstep1 = sigma_rho
 
         return
 
@@ -181,9 +183,6 @@ class estimation:
         
         # save state x, rc, rc_names, and prob
         self.df = observation_class.state_var_level_obs.copy()
-        # to array
-        self._preparation_save2array()
-        
 
         # some info to calculate transition matrix
         if joint_est:
@@ -191,8 +190,13 @@ class estimation:
             self.df_obs_to_estimate_rho = observation_class.df.copy()
         else:
             self.transition = observation_class.transition_fromstep1.copy()
+            self.rho = observation_class.rho_fromstep1 
+            self.sigma_rho = observation_class.sigma_rho_fromstep1 
        
         self.joint_est = joint_est
+
+        # to array
+        self._preparation_save2array()
 
         return
 
@@ -206,6 +210,11 @@ class estimation:
         self.action_prob = self.df['P'].values.copy()
         self.num_of_chosing0 = self.df['num_of_obs'].values * (1-self.df['P'].values)
         self.num_of_chosing1 = self.df['num_of_obs'].values * self.df['P'].values
+
+        # prepare for H-M inversion
+        transition = self.transition.copy()
+        P = self.df.P.values.copy()
+        self.HM_inv_LHS = est_func_step2_estimate_EV.HM_inversion_LHS(transition, P)
 
         return 
 
@@ -226,7 +235,7 @@ class estimation:
 
     # ---- III given parameter, estimate likelihood -------------------------------------------
 
-    def get_loglikelihood(self, parameters):
+    def get_loglikelihood(self, parameters, method = 'fixed_point'):
 
         if self.joint_est:
             if len(parameters) != 5:
@@ -239,21 +248,17 @@ class estimation:
                 print('Error: length of parameters != length of theta = 2')
             else:
                 theta = parameters
-                loglikelihood = self.get_loglikelihood_step2_est(theta, beta = 0.95)
+                loglikelihood = self.get_loglikelihood_step2_est(theta, beta = 0.95, method = method)
 
         return loglikelihood
 
-    def get_loglikelihood_step2_est(self, theta, beta=0.95):
+    def get_loglikelihood_step2_est(self, theta, method = 'fixed_point', beta=0.95):
+        '''method: fixed_point or H-M '''
 
-        # 1. get perperiod payoff 
-        u = self._get_perperiod_u(theta)
+        # 1. get values of each choice
+        EV, u, transition = self._get_continuation_values(theta, method, beta)
 
-        # 2. get transition matrix (for free)
-        transition = self.transition.copy() # note this is a dictionary
-
-        EV = est_func_step2_estimate_EV.find_fixed_point(u, transition, beta =beta)
-
-        # 3. calculate payoff of each choice
+        # calculate payoff of each choice
         delta_0 = u['0'] + beta*EV['0'] 
         delta_1 = u['1'] + beta*EV['1'] 
 
@@ -275,8 +280,8 @@ class estimation:
 
         loglikelihood = log_p_0 * self.num_of_chosing0 + log_p_1 * self.num_of_chosing1
         loglikelihood = loglikelihood.sum()
-
-        return -loglikelihood 
+        
+        return -loglikelihood
 
     def get_loglikelihood_joint_est(self, parameters):
         
@@ -296,8 +301,8 @@ class estimation:
     # --------------------
     def _get_perperiod_u(self, theta):
 
-        u_0 = self.x * theta[0]
-        u_1 = self.rc * theta[1] 
+        u_0 = -self.x * theta[0]
+        u_1 = -self.rc * theta[1] 
 
         u = {}
         u['0'] = u_0
@@ -305,6 +310,25 @@ class estimation:
 
         return u
 
+    def _get_continuation_values(self, theta, method = 'fixed_point' , beta = 0.95):
+
+        # 1. get perperiod payoff 
+        u = self._get_perperiod_u(theta)
+
+        # 2. get transition matrix (for free)
+        transition = self.transition.copy() # note this is a dictionary
+
+        # 3. get continuation value
+        if method == 'fixed_point':
+            EV = est_func_step2_estimate_EV.find_fixed_point(u, transition, beta =beta)
+        elif method == 'H-Minversion':
+            P = self.df.P.values.copy()
+            EV = self.EV_from_HMinversion(u, transition, P)
+        else:
+            print('please chose method between fixed_point and H-Minversion')
+            return 
+
+        return EV, u, transition
 
 
     def _get_transition_mat(self, parameters_input, show_transition_mat=False):
@@ -319,8 +343,27 @@ class estimation:
 
 
 
+    # --------------------
+    # H-M inversion functions
+    # --------------------
+    def EV_from_HMinversion(self, u, transition, P):
+
+        # calculate the continuation value of each state (realization)
+        inv_LHS = self.HM_inv_LHS.copy()
+        RHS = est_func_step2_estimate_EV.HM_inversion_RHS(u, P)
+        
+        V = inv_LHS @ RHS
+
+        # calculate the Expected continuation value , given current state
+        EV = {}
+        EV['0'] = transition['0'] @ V
+        EV['1'] = transition['1'] @ V
+
+        return EV
 
 
+
+     
 
 
 

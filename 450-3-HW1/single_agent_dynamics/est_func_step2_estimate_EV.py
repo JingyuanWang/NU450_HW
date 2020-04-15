@@ -43,6 +43,7 @@ importlib.reload(data_format)
 
 def find_fixed_point(u, transition, EV0 = None , beta = 0.95, tol = 1e-8, maxiter = 1000):
 
+    gamma = 0.577216
     num_of_states = len(u['0'])
     if EV0 is None:
         EV0 = {}
@@ -70,8 +71,8 @@ def find_fixed_point(u, transition, EV0 = None , beta = 0.95, tol = 1e-8, maxite
         #EV_new['0'] = transition['0'] @ np.log(np.exp(delta_0) + np.exp(delta_1))
         #EV_new['1'] = transition['1'] @ np.log(np.exp(delta_0) + np.exp(delta_1))
         # the above 2 lines do not work globally when we try theta, for the above inf reasons
-        EV_new['0'] = transition['0'] @ (delta_1 + np.log(1 + np.exp(diff_in_delta)))
-        EV_new['1'] = transition['1'] @ (delta_1 + np.log(1 + np.exp(diff_in_delta)))
+        EV_new['0'] = transition['0'] @ (delta_1 + np.log(1 + np.exp(diff_in_delta))) + gamma
+        EV_new['1'] = transition['1'] @ (delta_1 + np.log(1 + np.exp(diff_in_delta))) + gamma
         
         # 3. updata:
         diff = np.abs(EV_new['0'] - EV['0']).sum() + np.abs(EV_new['1'] - EV['1']).sum()
@@ -99,11 +100,14 @@ def HM_inversion_LHS(transition, P, beta = 0.95):
     
     return np.linalg.inv(to_inv)
 
-def HM_inversion_RHS(u, transition, P):
+def HM_inversion_RHS(u, P):
 
     num_of_states = len(u['0'])
     gamma = 0.577216
     # phi 
+    precision = 10**-300
+    P[P<precision] = precision
+    P[P>1-precision] = 1-precision
     phi_0 = gamma - np.log(1-P)
     phi_1 = gamma - np.log(P)
 
@@ -114,10 +118,6 @@ def HM_inversion_RHS(u, transition, P):
     # total
 
     return (1-P) * total_u_0 + P * total_u_1
-
-# ---------------------------------------------------------------------------------
-# estimate transition matrix
-# ---------------------------------------------------------------------------------
 
 
 
