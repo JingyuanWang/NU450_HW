@@ -83,10 +83,10 @@ def rc_transition_mat(rho, sigma_rho, grid_cutoffs, show_transition_mat = False)
     epsilon_cutoff = np.ones( (100, len(grid_cutoffs)) ) * grid_cutoffs[np.newaxis, : ] - (rho[0] + rho[1] * p)[:, np.newaxis]
     
     # cdf of eps
-    cdfs = stats.norm.cdf(epsilon_cutoff)
-    if cdfs[:,-1].min() < 1-1e-5 :
+    cdfs = stats.norm.cdf(epsilon_cutoff, loc=0, scale=sigma_rho)
+    if cdfs[:,-1].min() < 1-1e-2 :
         print('ERROR !!!!! minimum possible value exceed the lower bound')
-    if cdfs[:,0].max() > 1e-5:
+    if cdfs[:,0].max() > 1e-2:
         print('ERROR !!!!! maximum possible value exceed the upper bound')
     
     # get transition matrix for each point in p (there are 100 points in total)
