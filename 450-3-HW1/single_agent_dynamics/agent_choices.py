@@ -58,12 +58,14 @@ def get_grid(df_input, varname, n_bins = 6, weight = True):
     # 1. cut
     df = df_input.copy()
 
-    (cat_var , cutoffs ) = pd.cut(df[varname], n_bins, retbins = True)
+    buffer_value = 0.1
+    cutoffs = np.linspace(df[varname].min()-buffer_value  , df[varname].max()+buffer_value , n_bins+1)
+    (cat_var , cutoffs ) = pd.cut(df[varname], bins = cutoffs, retbins = True)
 
 
     print('# ---- number of obs in each bin ---------- ')
     print( cat_var.value_counts().sort_index() )
-    df['{}_grid'.format(varname)] =  pd.cut(df[varname], n_bins)
+    df['{}_grid'.format(varname)] = cat_var
 
     # 2 group id
     grid_dict = (cat_var.value_counts()
@@ -282,6 +284,7 @@ class estimation:
         loglikelihood = loglikelihood.sum()
         
         return -loglikelihood
+    
 
     def get_loglikelihood_joint_est(self, parameters):
         
