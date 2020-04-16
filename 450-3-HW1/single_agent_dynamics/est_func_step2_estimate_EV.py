@@ -93,16 +93,16 @@ def HM_inversion_LHS(transition, P, beta = 0.95):
     num_of_states = transition['0'].shape[0]
     
     # 1. P*transition
-    combine_P_0 = (1-P)*transition['0']
-    combine_P_1 = P*transition['1']
+    combine_P_0 = (1-P[:, np.newaxis])*transition['0']
+    combine_P_1 = P[:, np.newaxis]*transition['1']
     to_inv = np.eye(num_of_states) - beta*(combine_P_0 + combine_P_1)
 
     
     return np.linalg.inv(to_inv)
+    #return to_inv
 
 def HM_inversion_RHS(u, P):
 
-    num_of_states = len(u['0'])
     gamma = 0.577216
     # phi 
     precision = 10**-300
