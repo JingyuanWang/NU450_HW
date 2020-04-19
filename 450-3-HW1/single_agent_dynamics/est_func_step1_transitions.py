@@ -101,6 +101,7 @@ def rc_transition_mat(rho, sigma_rho, grid_cutoffs, show_transition_mat = False)
         grid_transition[i,:] = np.mean(transition[ (p >= grid_cutoffs[i]) & (p<= grid_cutoffs[i+1]), : ], axis = 0)
     
     if show_transition_mat:
+        print('# ---- transition matrix for RC ------------- ')
         fig = plt.figure(figsize = (10,3))
         plt.subplot(1, 2, 1)
         sns.heatmap(transition, cmap = 'YlGnBu')

@@ -41,7 +41,7 @@ importlib.reload(data_format)
 # estimate EV: fixed point 
 # ---------------------------------------------------------------------------------
 
-def find_fixed_point(u, transition, EV0 = None , beta = 0.95, tol = 1e-8, maxiter = 1000):
+def find_fixed_point(u, transition, EV0 = None , beta = 0.95, tol = 1e-8, maxiter = 1000, print_details = False):
 
     gamma = 0.577216
     num_of_states = len(u['0'])
@@ -79,8 +79,9 @@ def find_fixed_point(u, transition, EV0 = None , beta = 0.95, tol = 1e-8, maxite
         EV = EV_new.copy()
         i = i + 1
     
-    print('total iter : {}'.format(i))
-    print('final diff : {}'.format(diff))
+    if print_details:
+        print('total iter : {}'.format(i))
+        print('final diff : {}'.format(diff))
 
     return EV_new
 

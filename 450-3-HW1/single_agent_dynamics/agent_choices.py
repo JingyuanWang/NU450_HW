@@ -101,6 +101,10 @@ class observations:
 
 
         # basic adjustment: grid state var & estimate probabilities
+        print('# ------------------------------------------------------------------ ')
+        print('# DATA CLEANING: cut state var into grid and show the data pattern  ')
+        print('# ------------------------------------------------------------------ ')
+
         self.df, self.rc_cutoffs = get_grid(df_input, 'rc', n_bins = n_rc_grids, weight = weight)
         self._calculate_action_prob_bystate()
         self._plot_initial_transition_mat()
@@ -237,7 +241,7 @@ class estimation:
 
     # ---- III given parameter, estimate likelihood -------------------------------------------
 
-    def get_loglikelihood(self, parameters, method = 'fixed_point'):
+    def get_loglikelihood(self, parameters, method = 'fixed_point', print_details = False):
 
         if self.joint_est:
             if len(parameters) != 5:
@@ -250,15 +254,15 @@ class estimation:
                 print('Error: length of parameters != length of theta = 2')
             else:
                 theta = parameters
-                loglikelihood = self.get_loglikelihood_step2_est(theta, beta = 0.95, method = method)
+                loglikelihood = self.get_loglikelihood_step2_est(theta, beta = 0.95, method = method, print_details = print_details)
 
         return loglikelihood
 
-    def get_loglikelihood_step2_est(self, theta, method = 'fixed_point', beta=0.95):
+    def get_loglikelihood_step2_est(self, theta, method = 'fixed_point', beta=0.95, print_details = False):
         '''method: fixed_point or H-M '''
 
         # 1. get values of each choice
-        EV, u, transition = self._get_continuation_values(theta, method, beta)
+        EV, u, transition = self._get_continuation_values(theta, method, beta, print_details = print_details)
 
         # calculate payoff of each choice
         delta_0 = u['0'] + beta*EV['0'] 
@@ -313,7 +317,7 @@ class estimation:
 
         return u
 
-    def _get_continuation_values(self, theta, method = 'fixed_point' , beta = 0.95):
+    def _get_continuation_values(self, theta, method = 'fixed_point' , beta = 0.95, print_details = False):
 
         # 1. get perperiod payoff 
         u = self._get_perperiod_u(theta)
@@ -323,7 +327,7 @@ class estimation:
 
         # 3. get continuation value
         if method == 'fixed_point':
-            EV = est_func_step2_estimate_EV.find_fixed_point(u, transition, beta =beta)
+            EV = est_func_step2_estimate_EV.find_fixed_point(u, transition, beta =beta, print_details = print_details)
         elif method == 'H-Minversion':
             P = self.df.P.values.copy()
             EV = self.EV_from_HMinversion(u, transition, P)
@@ -366,7 +370,9 @@ class estimation:
 
 
 
-     
+
+
+
 
 
 
