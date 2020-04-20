@@ -89,8 +89,7 @@ class ols_scott2003:
         # 
         self.gamma = 0.577216
 
-        # some prepare
-        self._preparation_save2array()
+
         
 
         return
@@ -115,8 +114,8 @@ class ols_scott2003:
         precision = 10**-300
         prob_0 = 1-P
         prob_1 = P.copy()
-        prob_0[prob_0<precision] = precision
-        prob_1[prob_1<precision] = precision
+        #prob_0[prob_0<precision] = precision
+        #prob_1[prob_1<precision] = precision
         
         # 2. dependent var, LHS:
         y_part_1 = np.log(prob_0) - np.log(prob_1) 
@@ -172,12 +171,16 @@ class ols_scott2003:
 
         # 4. calculate y
         P = df.P.values.copy()
-        prob_0 = _correct_prob_2log(1-P)
-        prob_1 = _correct_prob_2log(P)
+        #prob_0 = _correct_prob_2log(1-P)
+        #prob_1 = _correct_prob_2log(P)
+        prob_0 = 1-P
+        prob_1 = P
         y_part1_u = np.log(prob_0) - np.log(prob_1)
         
-        P1_a0_next = _correct_prob_2log(df.P1_a0_next.values.copy())
-        P1_a1_next = _correct_prob_2log(df.P1_a1_next.values.copy())
+        #P1_a0_next = _correct_prob_2log(df.P1_a0_next.values.copy())
+        #P1_a1_next = _correct_prob_2log(df.P1_a1_next.values.copy())
+        P1_a0_next = df.P1_a0_next.values.copy()
+        P1_a1_next = df.P1_a1_next.values.copy()
         y_part2_EU = np.log(P1_a0_next) - np.log(P1_a1_next)
         
         df['y'] = y_part1_u + beta * y_part2_EU
@@ -186,10 +189,7 @@ class ols_scott2003:
 
 
 
-    def _preparation_save2array(self):
 
-
-        return 
 
  
 
