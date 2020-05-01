@@ -188,7 +188,7 @@ class FPA_lognormal:
         x = x[x<=v_ub]
 
         # ---- 2. integral
-        integral =  sum(cdf_x**(n_bidders-1))/self.n_simul_draws
+        integral =  sum(cdf_x**(n_bidders-1))/len(x)
 
         #integral_tocheck_should_eq_expectation = sum(1-cdf_x)/self.n_simul_draws
 
