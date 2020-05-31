@@ -78,9 +78,13 @@ quietly reg fine lag_investment  lag_hpv_status  ///
 * 2. predict 
 preserve 
     * keep related x variables
-    keep frsnumber time_id quarter_str lag_hpv_status lag_dav region orig_naics gravity 
+    keep frsnumber time_id quarter_str hpv_status dav region orig_naics gravity 
 	duplicates drop
 	sort frsnumber time_id
+
+	* rename, to predict 
+	rename hpv_status lag_hpv_status
+	rename dav lag_dav
     
 	* generate lag_investment = 0 or 1
 	gen lag_investment = 1
@@ -105,14 +109,12 @@ restore
 * prepare for c 
 merge 1:1 frsnumber time_id using `expected_fine.dta'
 drop _merge 
-predict E_fine 
-
 
 ********************************************************************************
 * III. reg Q3 c probit 
 ********************************************************************************	
 
-probit lag_investment E_diff_fine
+probit investment E_diff_fine
 
 
 
