@@ -72,13 +72,13 @@ estout,  ///
 ********************************************************************************		
 
 * 1. reg
-quietly reg fine lag_investment  lag_hpv_status  ///
+reg fine lag_investment  lag_hpv_status  ///
 				i.lag_investment#i.lag_hpv_status#c.lag_dav  i.region i.orig_naics i.gravity if lag_compliance == 0
 
 * 2. predict 
 preserve 
     * keep related x variables
-    keep frsnumber time_id quarter_str hpv_status dav region orig_naics gravity 
+    keep frsnumber time_id quarter_str hpv_status dav region orig_naics gravity compliance
 	duplicates drop
 	sort frsnumber time_id
 
@@ -114,7 +114,7 @@ drop _merge
 * III. reg Q3 c probit 
 ********************************************************************************	
 
-probit investment E_diff_fine
+probit investment E_diff_fine if compliance == 0
 
 
 
