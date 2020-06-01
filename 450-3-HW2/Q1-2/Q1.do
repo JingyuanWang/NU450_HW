@@ -101,7 +101,7 @@ gen lag_violation = L.violation
 preserve
 collapse (mean) investment compliance hpv_recorded lag_investment lag2_investment ///
               inspection fine violation lag_inspection lag_fine lag_violation ///
-			  , by(region naics_recode orig_naics gravity )
+			  , by(region naics_recode orig_naics gravity year quarter time_id)
 egen region_ind_code = group(region orig_naics)
 
 ***************************************
