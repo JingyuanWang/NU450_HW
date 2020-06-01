@@ -93,9 +93,10 @@ preserve
 	predict fine_predicted_noinvest
 
 	* report conditional mean
-    sum fine_predicted_invest fine_predicted_noinvest if lag_hpv_status == 0 & region == 1 & orig_naics == 21 
-    sum fine_predicted_invest fine_predicted_noinvest if lag_hpv_status == 1 & region == 1 & orig_naics == 21 
-	
+	rename lag_hpv_status hpv_status
+	rename lag_dav dav
+    sum fine_predicted_invest fine_predicted_noinvest if hpv_status == 0 & region == 1 & orig_naics == 21 & compliance == 0
+    sum fine_predicted_invest fine_predicted_noinvest if hpv_status == 1 & region == 1 & orig_naics == 21 & compliance == 0
 	
 	* prepare for c.
 	* generate the difference 
