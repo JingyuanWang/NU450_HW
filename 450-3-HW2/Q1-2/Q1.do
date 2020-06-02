@@ -116,24 +116,31 @@ estadd local gravityFE ""
 estadd local regionFE ""
 estadd local naicsFE ""
 
-eststo: reghdfe compliance inspection fine violation , a(gravity orig_naics) cluster(region_ind_code)
+eststo: reghdfe compliance inspection fine violation , a(region orig_naics gravity) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
 
-eststo: reghdfe compliance inspection fine violation, a(region orig_naics gravity) cluster(region_ind_code)
-estadd local gravityFE "Yes"
-estadd local regionFE "Yes"
-estadd local naicsFE "Yes"
-estadd local timeFE "Yes"
-
-eststo: reghdfe compliance inspection fine violation lag_hpv_status lag_violator_nothpv dav, a(region orig_naics gravity) cluster(region_ind_code)
+eststo: reghdfe compliance inspection fine violation, a(region orig_naics gravity time_id) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
 estadd local timeFE "Yes"
 
-eststo: reghdfe compliance inspection fine violation lag_hpv_status lag_violator_nothpv dav lag_investment lag2_investment, a(region orig_naics gravity) cluster(region_ind_code)
+
+eststo: reghdfe compliance inspection fine violation investment, a(region orig_naics gravity time_id) cluster(region_ind_code)
+estadd local gravityFE "Yes"
+estadd local regionFE "Yes"
+estadd local naicsFE "Yes"
+estadd local timeFE "Yes"
+
+eststo: reghdfe compliance inspection fine violation lag_hpv_status lag_violator_nothpv dav, a(region orig_naics gravity time_id) cluster(region_ind_code)
+estadd local gravityFE "Yes"
+estadd local regionFE "Yes"
+estadd local naicsFE "Yes"
+estadd local timeFE "Yes"
+
+eststo: reghdfe compliance inspection fine violation lag_hpv_status lag_violator_nothpv dav lag_investment lag2_investment, a(region orig_naics gravity time_id) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
