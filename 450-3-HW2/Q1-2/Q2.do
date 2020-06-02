@@ -78,14 +78,14 @@ estadd local naicsFE "Yes"
 estout,  ///
         cells(b(star fmt(3)) se(par fmt(3)))  ///
         modelwidth(10) varwidth(10) /// 
-		collabels("inspection" "inspection" "inspection" "fine" "fine" "fine") ///
+		mlabels("inspection" "inspection" "inspection" "fine" "fine: ext" "fine: int") ///
 		stats(r2_a N gravityFE naicsFE regionFE, fmt(%9.3f %9.0g) labels(R-squared)) 
 		
 
 estout using "$results/Q2.tex" , style(tex) ///
         cells(b(star fmt(3)) se(par fmt(3)))  ///
         modelwidth(10) varwidth(10) /// 
-		collabels("inspection" "inspection" "inspection" "fine" "fine" "fine") ///
+		collabels("inspection" "inspection" "inspection" "fine" "fine: ext" "fine: int") ///
 		stats(r2_a N gravityFE naicsFE regionFE, fmt(%9.3f %9.0g) labels(R-squared)) ///
 		drop( _cons ) ///
 		replace
