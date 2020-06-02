@@ -43,14 +43,9 @@ gen lag_ordered_violator = L.ordered_violator
 
 capture eststo clear
 * (a)
-eststo: reg inspection lag_violator_nothpv lag_hpv_status dav ,  cluster(region_ind_code) 
 eststo: reg inspection lag_violator_nothpv lag_hpv_status i.lag_ordered_violator#c.dav,  cluster(region_ind_code) 
 
 * (b)
-eststo: reghdfe inspection lag_violator_nothpv lag_hpv_status dav , a( i.region i.orig_naics i.gravity) cluster(region_ind_code) 
-estadd local gravityFE "Yes"
-estadd local regionFE "Yes"
-estadd local naicsFE "Yes"
 
 eststo: reghdfe inspection lag_violator_nothpv lag_hpv_status i.lag_ordered_violator#c.dav , a( i.region i.orig_naics i.gravity) cluster(region_ind_code) 
 estadd local gravityFE "Yes"
@@ -87,7 +82,6 @@ estout using "$results/Q2.tex" , style(tex) ///
         modelwidth(10) varwidth(10) /// 
 		collabels("inspection" "inspection" "inspection" "fine" "fine: ext" "fine: int") ///
 		stats(r2_a N gravityFE naicsFE regionFE, fmt(%9.3f %9.0g) labels(R-squared)) ///
-		drop( _cons ) ///
 		replace
 
 
