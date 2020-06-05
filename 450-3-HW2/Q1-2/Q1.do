@@ -94,53 +94,58 @@ gen lag_inspection = L.inspection
 gen lag_fine = L.fine 
 gen lag_violation = L.violation
 
+bysort frsnumber (time_id): egen violation_tot = total(violation)
+bysort frsnumber (time_id): egen fine_tot = total(fine)
+bysort frsnumber (time_id): egen inspection_tot = total(inspection)
+
+bysort frsnumber (time_id): gen violation_cumul = sum(violation)
+bysort frsnumber (time_id): gen fine_cumul = sum(fine)
+bysort frsnumber (time_id): gen inspection_cumul = sum(inspection)
 
 ***************************************
 * collapse to region-naics-gravity-quarter level
 ***************************************
 preserve
-collapse (mean) compliance lag_compliance lag_hpv_status lag_violator_nothpv dav ///
+collapse (mean) compliance lag_compliance lag_hpv_status lag_violator_nothpv dav *_cumul *_tot ///
               investment lag_investment lag2_investment ///
               inspection fine violation lag_inspection lag_fine lag_violation ///
-			  , by(region naics_recode orig_naics gravity year quarter time_id)
+			  , by(omega1 region naics_recode orig_naics gravity year quarter time_id)
 egen region_ind_code = group(region orig_naics)
 
+bysort omega1 (time_id): gen cumul_inspection = sum(inspection)
+bysort omega1 (time_id): gen cumul_fine = sum(fine)
+bysort omega1 (time_id): gen cumul_violation = sum(violation)
+bysort omega1 (time_id): gen n = _n 
+foreach var in cumul_inspection cumul_fine cumul_violation{
+	replace `var' = `var'/n
+}
+
+xtset omega1 time_id
 ***************************************
 * reg
 ***************************************
-
 capture eststo clear
 quietly{
-eststo: reg compliance inspection fine violation, cluster(region_ind_code)
-estadd local gravityFE ""
-estadd local regionFE ""
-estadd local naicsFE ""
 
-eststo: reghdfe compliance inspection fine violation , a(region orig_naics gravity) cluster(region_ind_code)
-estadd local gravityFE "Yes"
-estadd local regionFE "Yes"
-estadd local naicsFE "Yes"
-
-eststo: reghdfe compliance inspection fine violation, a(region orig_naics gravity time_id) cluster(region_ind_code)
+eststo: reghdfe compliance inspection fine violation , a(region orig_naics gravity time_id) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
 estadd local timeFE "Yes"
 
-
-eststo: reghdfe compliance inspection fine violation investment, a(region orig_naics gravity time_id) cluster(region_ind_code)
+eststo: reghdfe compliance lag_inspection lag_fine lag_violation, a(region orig_naics gravity time_id) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
 estadd local timeFE "Yes"
 
-eststo: reghdfe compliance inspection fine violation lag_hpv_status lag_violator_nothpv dav, a(region orig_naics gravity time_id) cluster(region_ind_code)
+eststo: reghdfe compliance inspection fine violation lag_inspection lag_fine lag_violation, a(region orig_naics gravity time_id) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
 estadd local timeFE "Yes"
 
-eststo: reghdfe compliance inspection fine violation lag_hpv_status lag_violator_nothpv dav lag_investment lag2_investment, a(region orig_naics gravity time_id) cluster(region_ind_code)
+eststo: reghdfe compliance inspection fine violation lag_inspection lag_fine lag_violation lag_hpv_status lag_violator_nothpv dav  , a(region orig_naics gravity time_id) cluster(region_ind_code)
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"

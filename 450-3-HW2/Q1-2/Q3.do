@@ -37,27 +37,28 @@ replace fine = fine * 1000
 gen lag_dav = L.dav
 gen lag_ordered_violator = L.ordered_violator
 gen lag_violator = L.violator
+gen F_dav = F.dav 
 ********************************************************************************
 * II. reg Q3 a 
 ********************************************************************************
 
 
 capture eststo clear		
-eststo: reghdfe fine  lag_investment  lag_hpv_status  lag_dav ///
+eststo: reghdfe fine  lag_investment  lag_hpv_status lag_violator_nothpv dav ///
                       if lag_compliance == 0 , a( i.region i.orig_naics i.gravity) cluster(region_ind_code) 
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"		
 			  
-eststo: reghdfe fine  lag_investment  lag_hpv_status lag_dav lag2_investment ///
+eststo: reghdfe fine  lag_investment  lag_hpv_status lag_violator_nothpv dav lag2_investment ///
                       if lag_compliance == 0 , a( i.region i.orig_naics i.gravity) cluster(region_ind_code) 	
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"		
 		
-eststo: reghdfe fine  lag_investment  lag_hpv_status  ///
-                i.lag_hpv_status#c.lag_dav  ///
-				i.lag_investment#i.lag_hpv_status#c.lag_dav  if lag_compliance == 0 , a(region orig_naics gravity ,save) cluster(region_ind_code) 
+eststo: reghdfe fine  lag_investment  lag_hpv_status  lag_violator_nothpv ///
+                i.lag_hpv_status#c.dav  ///
+				i.lag_investment#i.lag_hpv_status#c.dav  if lag_compliance == 0 , a(region orig_naics gravity ,save) cluster(region_ind_code) 
 estadd local gravityFE "Yes"
 estadd local regionFE "Yes"
 estadd local naicsFE "Yes"
@@ -72,19 +73,20 @@ estout,  ///
 ********************************************************************************		
 
 * 1. reg
-reg fine lag_investment  lag_hpv_status  ///
-				i.lag_investment#i.lag_hpv_status#c.lag_dav  i.region i.orig_naics i.gravity if lag_compliance == 0
+reg fine i.lag_investment#i.lag_hpv_status ///
+				i.lag_investment#i.lag_hpv_status#c.dav i.region i.orig_naics i.gravity if lag_compliance == 0
+
 
 * 2. predict 
 preserve 
     * keep related x variables
-    keep frsnumber time_id quarter_str hpv_status dav region orig_naics gravity compliance
+    keep frsnumber time_id quarter_str hpv_status F_dav region orig_naics gravity compliance
 	duplicates drop
 	sort frsnumber time_id
 
 	* rename, to predict 
 	rename hpv_status lag_hpv_status
-	rename dav lag_dav
+	rename F_dav dav
     
 	* generate lag_investment = 0 or 1
 	gen lag_investment = 1
@@ -94,7 +96,7 @@ preserve
 
 	* report conditional mean
 	rename lag_hpv_status hpv_status
-	rename lag_dav dav
+	rename dav F_dav
     sum fine_predicted_invest fine_predicted_noinvest if hpv_status == 0 & region == 1 & orig_naics == 21 & compliance == 0
     sum fine_predicted_invest fine_predicted_noinvest if hpv_status == 1 & region == 1 & orig_naics == 21 & compliance == 0
 	
