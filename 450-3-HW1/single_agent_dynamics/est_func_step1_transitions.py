@@ -24,18 +24,7 @@ import os,sys,inspect
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# my functions
-dirpath = os.getcwd()
-i = 0
-while(os.path.basename(dirpath) != "GitHub") and (i<=10):
-    dirpath = os.path.dirname(dirpath)
-    i = i + 1
-targetdir = dirpath + '/tools'
-if targetdir not in sys.path:
-    sys.path.insert(0,targetdir)
 
-from general import data_format
-importlib.reload(data_format)
 
 # ---------------------------------------------------------------------------------
 # estimate rho 

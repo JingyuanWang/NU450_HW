@@ -24,18 +24,7 @@ import os,sys,inspect
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# my functions
-dirpath = os.getcwd()
-i = 0
-while(os.path.basename(dirpath) != "GitHub") and (i<=10):
-    dirpath = os.path.dirname(dirpath)
-    i = i + 1
-targetdir = dirpath + '/tools'
-if targetdir not in sys.path:
-    sys.path.insert(0,targetdir)
 
-from general import data_format
-importlib.reload(data_format)
 
 # ---------------------------------------------------------------------------------
 # estimate EV: fixed point 
@@ -107,8 +96,8 @@ def HM_inversion_RHS(u, P):
     gamma = 0.577216
     # phi 
     precision = 10**-300
-    P[P<precision] = precision
-    P[P>1-precision] = 1-precision
+    P[P<precision] = precision     # avoild lnP = 0 or inf
+    P[P>1-precision] = 1-precision # avoild lnP = 0 or inf
     phi_0 = gamma - np.log(1-P)
     phi_1 = gamma - np.log(P)
 

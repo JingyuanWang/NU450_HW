@@ -41,11 +41,11 @@ targetdir = dirpath + '/tools'
 if targetdir not in sys.path:
     sys.path.insert(0,targetdir)
 
-from general import data_format
+
 from single_agent_dynamics import est_func_step1_transitions
 from single_agent_dynamics import est_func_step2_estimate_EV
 
-importlib.reload(data_format)
+
 importlib.reload(est_func_step1_transitions)
 importlib.reload(est_func_step2_estimate_EV)
 
