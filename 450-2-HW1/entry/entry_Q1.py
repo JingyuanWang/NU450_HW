@@ -54,7 +54,7 @@ class entry_likelihood:
 
     # II. Prepare for estimation --------------------------------------------------------
     def _initialize(self, n_sample):
-        '''Fix error term of simulation '''
+        '''Fix error term of simulation, n_sample is the size of simulated integral draws  '''
 
         # 1. get parameters
         M = self.M
